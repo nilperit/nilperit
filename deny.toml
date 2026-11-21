@@ -1,0 +1,53 @@
+# cargo-deny configuration: supply-chain checks for all Rust dependencies.
+# Run locally with: cargo deny check
+# Documentation: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check the dependency graph for all targets and all features, so a
+# platform-specific or optional dependency cannot slip through.
+all-features = true
+
+[advisories]
+# Fail on crates with a known vulnerability (RustSec advisory database).
+# To accept an advisory temporarily, add its ID here with a comment that
+# explains why and when it will be removed.
+ignore = []
+# Yanked crates were withdrawn by their authors; do not depend on them.
+yanked = "deny"
+
+[licenses]
+# Only licenses that are compatible with distributing NilPerit under MIT.
+# Add a license here only after checking that it is permissive and
+# compatible; copyleft licenses (GPL, LGPL, AGPL) are not allowed.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "CC0-1.0",
+  "Unicode-3.0",
+]
+confidence-threshold = 0.9
+# Not every allowed license is in use yet; do not warn about that.
+unused-allowed-license = "allow"
+
+[bans]
+# Two versions of the same crate (for example two versions of a crypto
+# crate) are worth a look, but not always avoidable.
+multiple-versions = "warn"
+# Version requirements like "*" make builds unpredictable.
+wildcards = "deny"
+# Workspace path dependencies have no version; that is fine for our own
+# unpublished crates.
+allow-wildcard-paths = true
+
+[sources]
+# Only crates.io. A git dependency or another registry must be a deliberate,
+# reviewed decision: add it to the allow lists below.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

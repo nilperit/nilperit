@@ -7,6 +7,11 @@ on:
 
 permissions: {}
 
+# A new push to the same pull request cancels the run that is still going.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -40,3 +45,34 @@ jobs:
 
       - name: Check crate layering
         run: scripts/check-layering.sh
+
+  deny:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # Update version and checksum together. The checksum is the published
+      # .sha256 file of the release asset.
+      CARGO_DENY_VERSION: "0.22.0"
+      CARGO_DENY_SHA256: "98c56e6a408bfa5c3c60744b6015aaa6aa08f743fdeb88386d06fca035bb1786"
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A pinned release binary with a verified checksum: no third-party
+      # action, and no compile step on every run.
+      - name: Install cargo-deny
+        run: |
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl --proto '=https' --tlsv1.2 -sSfL -o cargo-deny.tar.gz \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${name}.tar.gz"
+          echo "${CARGO_DENY_SHA256}  cargo-deny.tar.gz" | sha256sum --check --strict
+          tar -xzf cargo-deny.tar.gz
+          mkdir -p "${HOME}/.cargo/bin"
+          install -m 0755 "${name}/cargo-deny" "${HOME}/.cargo/bin/cargo-deny"
+
+      - name: Check advisories, licenses, bans and sources
+        run: cargo deny --locked check
