@@ -17,7 +17,7 @@ An archive is meant to last decades. Someone who copies an encrypted vault today
 
 - Protection against future quantum attacks on data written from now on.
 - Copies taken before a future algorithm change cannot be protected afterwards; crypto agility only protects what comes next. We accept this.
-- The exact combiner construction is still open (see FORMAT.md, open items).
+- The exact combiner construction is still open (see format.md, open items).
 
 ## Alternatives considered
 

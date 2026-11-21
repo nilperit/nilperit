@@ -13,7 +13,7 @@ A vault holds history that exists nowhere else, so "start over with a fresh back
 - Every NilPerit version **reads all older format versions**, and should upgrade them flawlessly (lazily for new data, or rewritten via the repack machinery).
 - **Older software meeting a newer vault stops** and tells the user to upgrade or use the bundled reader.
 - Every header carries **algorithm IDs** (crypto, hash, compression), so future versions know what to migrate.
-- **Every vault carries a reader for its own format version.** An upgrade writes the new reader in the same commit. Planned contents: static `nilperit-recover` binaries for common platforms, one self-contained offline HTML file with the WebAssembly reader, the source code, `FORMAT.md` and the schema, with hashes (and later signatures).
+- **Every vault carries a reader for its own format version.** An upgrade writes the new reader in the same commit. Planned contents: static `nilperit-recover` binaries for common platforms, one self-contained offline HTML file with the WebAssembly reader, the source code, `format.md` and the schema, with hashes (and later signatures).
 - If compatibility with some ancient version ever has to be dropped, that is decided then, in a new ADR.
 
 ## Consequences

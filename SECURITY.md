@@ -20,7 +20,7 @@ We will acknowledge your report as soon as we can, keep you informed, and credit
 
 Of particular interest:
 
-- weaknesses in the vault format or the key hierarchy (see [`docs/FORMAT.md`](docs/FORMAT.md));
+- weaknesses in the vault format or the key hierarchy (see [`docs/format.md`](docs/format.md));
 - ways for a node to read stored content without the read key;
 - ways for one damaged or malicious file to corrupt or hide unrelated data;
 - leaks of keys, plaintext or metadata through logs, errors or the API.

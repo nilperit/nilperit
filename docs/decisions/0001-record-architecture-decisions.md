@@ -9,9 +9,9 @@ NilPerit stores data that may need to be read decades from now, possibly by peop
 
 ## Decision
 
-We keep architecture decision records in `docs/decisions/`, one decision per file, in plain English. The normative format lives in `docs/FORMAT.md` (Simplified Technical English plus RFC 2119 keywords). Terms are defined once in `docs/glossary.md`.
+We keep architecture decision records in `docs/decisions/`, one decision per file, in plain English. The normative format lives in `docs/format.md` (Simplified Technical English plus RFC 2119 keywords). Terms are defined once in `docs/glossary.md`.
 
-A pull request that changes the format also updates `FORMAT.md` and, if it changes a decision, adds a new ADR.
+A pull request that changes the format also updates `format.md` and, if it changes a decision, adds a new ADR.
 
 ## Consequences
 

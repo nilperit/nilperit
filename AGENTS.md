@@ -8,11 +8,11 @@ NilPerit is a personal backup system. It pulls data from cloud services and loca
 
 ## Read these first
 
-1. [`docs/FORMAT.md`](docs/FORMAT.md) — the normative vault format. It is the source of truth for how data is stored.
+1. [`docs/format.md`](docs/format.md) — the normative vault format. It is the source of truth for how data is stored.
 2. [`docs/glossary.md`](docs/glossary.md) — every technical term. Use these terms with these meanings only.
 3. [`docs/decisions/`](docs/decisions/) — architecture decision records: why things are the way they are.
 
-If the code and `FORMAT.md` disagree, stop and ask. Do not silently follow either one.
+If the code and `format.md` disagree, stop and ask. Do not silently follow either one.
 
 ## Non-negotiable principles
 
@@ -51,9 +51,9 @@ nilperit-connector-*, nilperit-node, nilperit-wasm
 
 ## Documentation conventions
 
-- `docs/FORMAT.md` and `docs/glossary.md` are written in loose ASD-STE100 Simplified Technical English with RFC 2119 keywords: short sentences, one statement per sentence, active voice, consistent terms.
+- `docs/format.md` and `docs/glossary.md` are written in loose ASD-STE100 Simplified Technical English with RFC 2119 keywords: short sentences, one statement per sentence, active voice, consistent terms.
 - ADRs are plain English. Do not rewrite an accepted ADR; add a new one that supersedes it.
-- A change to the format updates `FORMAT.md` in the same pull request.
+- A change to the format updates `format.md` in the same pull request.
 - A new term goes into the glossary before it is used elsewhere.
 
 ## Git and pull requests

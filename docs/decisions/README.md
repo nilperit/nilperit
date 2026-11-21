@@ -1,6 +1,6 @@
 # Architecture decision records
 
-This folder records the significant design decisions of NilPerit: what we decided, why, and what we gave up. The normative rules live in [FORMAT.md](../FORMAT.md); these records explain the reasoning behind them.
+This folder records the significant design decisions of NilPerit: what we decided, why, and what we gave up. The normative rules live in [format.md](../format.md); these records explain the reasoning behind them.
 
 ADRs are written in plain English (not STE), because rationale and trade-offs read badly in a controlled language.
 
@@ -12,19 +12,19 @@ ADRs are written in plain English (not STE), because rationale and trade-offs re
 
 ## Index
 
-| # | Title | Status |
-|---|---|---|
-| [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
-| [0002](0002-archive-first-raw-originals.md) | Archive first, raw originals byte for byte | Accepted |
-| [0003](0003-rust-core-svelte-ui.md) | Rust for the core, Svelte for the UI, decrypt in the client | Accepted |
-| [0004](0004-key-hierarchy-write-only-node.md) | Key hierarchy and the write-only node | Accepted |
-| [0005](0005-content-addressed-vault.md) | Content-addressed vault with chunking profiles | Accepted |
-| [0006](0006-cbor-and-embedded-schema.md) | Deterministic CBOR with an embedded schema | Accepted |
-| [0007](0007-truth-cache-journal.md) | Truth vs cache: change journal with checkpoints | Accepted |
-| [0008](0008-packs-and-commits.md) | Packs, commit order and not trusting the file system | Accepted |
-| [0009](0009-sources-and-priority.md) | Sources as account plus selection, with priority | Accepted |
-| [0010](0010-retention-condemn-sweep.md) | Two kinds of retention; condemn now, sweep later | Accepted |
-| [0011](0011-versioning-and-bundled-reader.md) | Versioning and the bundled reader | Accepted |
-| [0012](0012-post-quantum-hybrid.md) | Hybrid post-quantum encryption from day one | Accepted |
-| [0013](0013-integrity-and-degradation.md) | Integrity, optional parity and graceful degradation | Accepted |
-| [0014](0014-workspace-layout.md) | Workspace layout and a reader-only binary | Accepted |
+| #                                             | Title                                                       | Status   |
+| --------------------------------------------- | ----------------------------------------------------------- | -------- |
+| [0001](0001-record-architecture-decisions.md) | Record architecture decisions                               | Accepted |
+| [0002](0002-archive-first-raw-originals.md)   | Archive first, raw originals byte for byte                  | Accepted |
+| [0003](0003-rust-core-svelte-ui.md)           | Rust for the core, Svelte for the UI, decrypt in the client | Accepted |
+| [0004](0004-key-hierarchy-write-only-node.md) | Key hierarchy and the write-only node                       | Accepted |
+| [0005](0005-content-addressed-vault.md)       | Content-addressed vault with chunking profiles              | Accepted |
+| [0006](0006-cbor-and-embedded-schema.md)      | Deterministic CBOR with an embedded schema                  | Accepted |
+| [0007](0007-truth-cache-journal.md)           | Truth vs cache: change journal with checkpoints             | Accepted |
+| [0008](0008-packs-and-commits.md)             | Packs, commit order and not trusting the file system        | Accepted |
+| [0009](0009-sources-and-priority.md)          | Sources as account plus selection, with priority            | Accepted |
+| [0010](0010-retention-condemn-sweep.md)       | Two kinds of retention; condemn now, sweep later            | Accepted |
+| [0011](0011-versioning-and-bundled-reader.md) | Versioning and the bundled reader                           | Accepted |
+| [0012](0012-post-quantum-hybrid.md)           | Hybrid post-quantum encryption from day one                 | Accepted |
+| [0013](0013-integrity-and-degradation.md)     | Integrity, optional parity and graceful degradation         | Accepted |
+| [0014](0014-workspace-layout.md)              | Workspace layout and a reader-only binary                   | Accepted |

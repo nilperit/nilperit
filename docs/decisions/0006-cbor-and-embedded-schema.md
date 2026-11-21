@@ -11,7 +11,7 @@ Objects must stay readable for decades, possibly by tools other than NilPerit. T
 
 - All objects use **CBOR (RFC 8949)** with **deterministic encoding**.
 - Maps use **small integer keys** for compactness (COSE style), via the `minicbor` crate.
-- Each vault carries, in plaintext, a **schema dictionary** in CDDL (RFC 8610) that maps every object type, version and field number to a name, type and description, plus a copy of `FORMAT.md`.
+- Each vault carries, in plaintext, a **schema dictionary** in CDDL (RFC 8610) that maps every object type, version and field number to a name, type and description, plus a copy of `format.md`.
 - The schema dictionary is generated from the Rust types at build time; a test fails when the code and the committed schema disagree.
 
 ## Consequences
