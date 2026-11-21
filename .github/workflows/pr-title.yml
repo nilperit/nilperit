@@ -13,7 +13,7 @@ permissions: {}
 
 jobs:
   conventional-title:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       # A merge group has no PR title. The title was checked when the PR was open.
       - name: Check Conventional Commits format

@@ -1,0 +1,16 @@
+[package]
+name = "nilperit-reader"
+description = "Opens, reads, verifies and salvages a NilPerit vault"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+nilperit-format.workspace = true
+nilperit-crypto.workspace = true
+
+[lints]
+workspace = true

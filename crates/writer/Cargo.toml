@@ -1,0 +1,17 @@
+[package]
+name = "nilperit-writer"
+description = "Chunking, packs, commits, retention and sweep for a NilPerit vault"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+nilperit-reader.workspace = true
+nilperit-format.workspace = true
+nilperit-crypto.workspace = true
+
+[lints]
+workspace = true

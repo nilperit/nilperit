@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  # Required for the merge queue: checks must also run on merge groups.
+  merge_group:
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # rustup reads rust-toolchain.toml and installs the pinned toolchain,
+      # its components and the wasm32 target on the first cargo command.
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Build the reader side for wasm32
+        run: >
+          cargo check --locked --target wasm32-unknown-unknown
+          -p nilperit-format -p nilperit-crypto -p nilperit-reader
+
+      - name: Check crate layering
+        run: scripts/check-layering.sh
