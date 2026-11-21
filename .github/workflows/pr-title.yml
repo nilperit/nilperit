@@ -1,0 +1,29 @@
+name: PR title
+
+# The PR title becomes the squash commit message on main, so it must follow
+# Conventional Commits. Keep the pattern in sync with main-commit.yml.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  # Required for the merge queue: the check must also report on merge groups.
+  merge_group:
+
+permissions: {}
+
+jobs:
+  conventional-title:
+    runs-on: ubuntu-24.04
+    steps:
+      # A merge group has no PR title. The title was checked when the PR was open.
+      - name: Check Conventional Commits format
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          re='^(feat|fix|docs|chore|refactor|test|ci)(\([a-z0-9._-]+\))?!?: .+'
+          if [[ ! "$TITLE" =~ $re ]]; then
+            echo "::error::PR title must follow Conventional Commits, for example: feat(reader): open a vault"
+            echo "::error::Allowed types: feat, fix, docs, chore, refactor, test, ci"
+            exit 1
+          fi
