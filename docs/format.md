@@ -84,6 +84,8 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.3.9. A node MUST compare the public part of the read key in the vault config with the value in its node credential. When they are different, the node MUST stop. An attacker who changes the config must not make the node seal data to a different key.
 
+3.3.9.1. A reader that has the recovery phrase MUST derive the public part of the read key and compare it with the value in the vault config. When they are different, the reader MUST stop and report a changed vault config. This protects against a replica that was changed.
+
 3.3.10. The lock file is plaintext and not authenticated. It contains only a node ID and a heartbeat time. A changed lock file can stop a node, but it cannot change data.
 
 3.3.11. The format MUST record an algorithm ID for each algorithm that it uses: encryption, key encapsulation, hashing, and compression. This lets a later version change algorithms.
@@ -189,6 +191,8 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 5.5.8. **Journal head.** The head of a journal is the journal entry that the newest authenticated snapshot header of that source names (see 5.9). A journal entry that no snapshot header names, and that is not an ancestor of the head, is an orphan (see 8.5).
 
+5.5.8.1. The newest snapshot header is the header with the highest sequence number in its journal position. NilPerit uses the time in the header only to select between headers with the same sequence number. It MUST NOT use time alone, because clocks can be wrong.
+
 5.5.9. A new journal entry MUST use the current head as its parent. NilPerit MUST NOT use an orphan entry as a parent.
 
 5.5.10. When all snapshot headers of a source are missing or damaged, a reader selects the head as follows:
@@ -200,7 +204,9 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 This procedure can select an entry that was complete but not committed. That is safe, because all objects that the entry references are present and valid.
 
-5.5.11. Two entries with the same parent are a fork. A fork can only come from a failure or from two writers. A reader MUST report a fork. It MUST NOT discard either branch. A sweep MUST NOT remove a branch of a fork until the owner decides.
+5.5.11. A **fork** is two journal entries with the same parent, where each entry is named by an authenticated snapshot header or is an ancestor of such an entry. A fork can only come from two writers or from damage. A reader MUST report a fork. It MUST NOT discard either branch. A sweep MUST NOT remove a branch of a fork until the owner decides.
+
+5.5.12. An orphan with the same parent as a committed entry is not a fork. Example: a crash leaves an uncommitted entry E5 with parent E4. The next run writes E5′ with parent E4 and commits it. E5 stays an orphan, and a sweep removes it after the grace period (see 8.5). E5 and E5′ have the same sequence number; this is not an error.
 
 ### 5.6. Trees
 
@@ -351,14 +357,22 @@ vault/
 
 11.3. NilPerit MUST NOT remove data immediately. The procedure has two steps:
 
-1. **Condemn.** After each synchronization, NilPerit applies the retention rules. It writes a condemnation record for each expired root: a journal range or an archive entry. A condemnation record does not remove data. NilPerit can revoke it.
+1. **Condemn.** After each synchronization, NilPerit applies the retention rules. It writes a condemnation record for each expired journal range. A condemnation record does not remove data. NilPerit can revoke it.
 2. **Sweep.**
    1. NilPerit starts from all live roots: the journal heads, and all journal entries, checkpoints, checkpoint trees, and archive trees that no active condemnation record marks.
    2. It finds all objects that these roots use. An object that no live root uses is unreachable.
    3. It removes a pack only when all objects in the pack are unreachable and the newest condemnation record that made them unreachable is older than the grace period. Orphan packs become eligible after the grace period too.
    4. It rewrites (repacks) a pack when more than a configurable part of it (default 30 %) is unreachable.
 
-11.3.1. Snapshots are caches, so they are not roots. To remove snapshots, NilPerit first writes a new checkpoint (or a combined delta entry) that keeps all state that retention still needs. Then it condemns the journal range of the removed snapshots.
+11.3.1. Journal entries, checkpoints, and trees are immutable. NilPerit cannot remove one part of them. To remove data, NilPerit uses compaction:
+
+1. It writes a new checkpoint (or a combined delta entry) that keeps only the state that retention still needs.
+2. Then it condemns the journal range that the new checkpoint replaces.
+
+11.3.2. NilPerit uses compaction for both kinds of retention:
+
+- **Snapshot retention:** snapshots are caches, so they are not roots. The new checkpoint keeps the state of the snapshots that retention keeps.
+- **Item retention:** to expire item versions, the new checkpoint has a smaller archive tree without the expired versions.
 
 11.4. A sweep MUST find live objects from the live roots, which are truth. It MUST NOT use reference counts or caches.
 

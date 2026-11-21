@@ -44,8 +44,11 @@ A set of chunker settings: algorithm, minimum size, average size, and maximum si
 **Commit**
 The step that makes new data part of the *vault*. A commit is complete when NilPerit has written the *snapshot header*.
 
+**Compaction**
+The way NilPerit removes history. *Journal entries* and trees are immutable, so NilPerit writes a new *checkpoint* (or a combined *delta entry*) that keeps only what retention still needs, and then condemns the *journal* range that it replaces.
+
 **Condemnation record**
-A record that marks objects for removal. A condemnation record does not remove data. NilPerit can revoke it until a *sweep* runs.
+A record that marks a range of *journal entries* for removal, after *compaction* has replaced it. A condemnation record does not remove data. NilPerit can revoke it until a *sweep* runs.
 
 **Connector**
 The code that gets data from one kind of external service or local system, for example Gmail or a local folder.
@@ -64,6 +67,9 @@ A *pack* that contains *truth*: *chunks*, *content objects*, *item records*, *jo
 
 **Dedup key**
 The key for the keyed hash that makes *object IDs* and *item keys*. The *node* has this key.
+
+**Fork**
+Two *journal entries* with the same parent, where each entry is named by an authenticated *snapshot header* or is an ancestor of such an entry. A fork can only come from two writers or from damage. An *orphan* with the same parent as a committed entry is not a fork.
 
 **Grace period**
 The time that must pass after a *condemnation record* or after the creation of an *orphan* before a *sweep* can remove the data.
@@ -93,7 +99,7 @@ The rules that control how long NilPerit keeps *item* versions and deleted items
 The append-only chain of *journal entries* of one *source*. The journal is *truth*.
 
 **Journal head**
-The newest committed *journal entry* of a *source*: the entry that the newest authenticated *snapshot header* names. A new journal entry uses the journal head as its parent.
+The newest committed *journal entry* of a *source*: the entry that the newest authenticated *snapshot header* names. The newest snapshot header is the one with the highest *sequence number* in its *journal position*. A new journal entry uses the journal head as its parent.
 
 **Journal entry**
 One immutable record in a *journal*: a *delta entry* or a *checkpoint*.
