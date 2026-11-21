@@ -11,3 +11,7 @@ indent_size = 2
 [*.md]
 # Trailing double space is a line break in Markdown
 trim_trailing_whitespace = false
+
+[*.{rs,toml}]
+# Matches rustfmt and the Cargo conventions.
+indent_size = 4
