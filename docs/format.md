@@ -66,7 +66,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | Key class | Objects | Who can open |
 |---|---|---|
 | R (read) | Chunks, item records | Only the holder of the read key |
-| W (writer) | Content objects, journal entries, checkpoint trees, archive trees, item map nodes, archive map nodes | The node and the owner |
+| W (writer) | Content objects, journal entries, checkpoint trees, archive trees, item map nodes, archive map nodes, object tables, snapshot headers, condemnation records, index segments | The node and the owner |
 
 3.3.2. For R objects, each pack has a random 32-byte pack key. NilPerit MUST seal the pack key to the public part of the read key. The seal uses a hybrid KEM: X25519 and ML-KEM-768 together. A reader needs both secrets to open the seal. TBD: exact combiner construction (candidate: X-Wing).
 
@@ -78,7 +78,15 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.3.6. The owner can open objects of both key classes, because all keys derive from the root seed. A party without keys can open neither class.
 
-3.3.7. The format MUST record an algorithm ID for each algorithm that it uses: encryption, key encapsulation, hashing, and compression. This lets a later version change algorithms.
+3.3.7. Snapshot headers, condemnation records, and index segments are files outside packs. Each is one W object, encrypted and authenticated with XChaCha20-Poly1305 and a key that NilPerit derives from the writer key. A reader authenticates them with the AEAD tag.
+
+3.3.8. The vault config is plaintext CBOR, because a reader must read the format version and the algorithm IDs before it has keys. It contains no data of the owner. NilPerit MUST authenticate it with a keyed BLAKE3 MAC. The key derives from the writer key. TBD: exact derivation.
+
+3.3.9. A node MUST compare the public part of the read key in the vault config with the value in its node credential. When they are different, the node MUST stop. An attacker who changes the config must not make the node seal data to a different key.
+
+3.3.10. The lock file is plaintext and not authenticated. It contains only a node ID and a heartbeat time. A changed lock file can stop a node, but it cannot change data.
+
+3.3.11. The format MUST record an algorithm ID for each algorithm that it uses: encryption, key encapsulation, hashing, and compression. This lets a later version change algorithms.
 
 ## 4. Encoding
 
@@ -157,7 +165,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 ### 5.5. Journal entries (truth)
 
-5.5.1. Each source has one journal. A journal is a chain of journal entries. Each entry points to its parent entry.
+5.5.1. Each source has one journal. A journal is a chain of journal entries. Each entry points to its parent entry and has a sequence number: the sequence number of its parent plus one.
 
 5.5.2. A **delta entry** contains:
 
@@ -178,6 +186,21 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 5.5.6. NilPerit MUST write a checkpoint after a configurable number of delta entries or after a configurable time.
 
 5.5.7. Journal entries, checkpoint trees, and archive trees have key class W.
+
+5.5.8. **Journal head.** The head of a journal is the journal entry that the newest authenticated snapshot header of that source names (see 5.9). A journal entry that no snapshot header names, and that is not an ancestor of the head, is an orphan (see 8.5).
+
+5.5.9. A new journal entry MUST use the current head as its parent. NilPerit MUST NOT use an orphan entry as a parent.
+
+5.5.10. When all snapshot headers of a source are missing or damaged, a reader selects the head as follows:
+
+1. It finds all journal entries of the source whose referenced objects are all present and valid, and whose chain of parents back to a checkpoint is also valid.
+2. From these entries, it selects the entry with the highest sequence number.
+3. When two entries have the same sequence number, it selects the entry with the latest time.
+4. All other entries that are not ancestors of the selected head are orphans.
+
+This procedure can select an entry that was complete but not committed. That is safe, because all objects that the entry references are present and valid.
+
+5.5.11. Two entries with the same parent are a fork. A fork can only come from a failure or from two writers. A reader MUST report a fork. It MUST NOT discard either branch. A sweep MUST NOT remove a branch of a fork until the owner decides.
 
 ### 5.6. Trees
 
@@ -211,9 +234,11 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 ### 5.9. Snapshot header (cache)
 
-5.9.1. Fields: source ID, time, root of the item map, parent snapshot, journal position, statistics, and a copy of the essential vault config fields.
+5.9.1. Fields: source ID, snapshot ID, time, root of the item map, parent snapshot, journal position (the ID and sequence number of the journal entry that is the head after this snapshot), statistics, and a copy of the essential vault config fields.
 
-5.9.2. NilPerit can make a snapshot header again from the journal.
+5.9.2. A snapshot header is one W object (see 3.3.7). All its fields, including the statistics, are encrypted.
+
+5.9.3. NilPerit can make a snapshot header again from the journal (see 5.5.10).
 
 ## 6. Packs
 
@@ -247,15 +272,15 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 ```
 vault/
-  config            vault config (authenticated; mirrored)
+  config            vault config (plaintext, MAC-authenticated; mirrored)
   FORMAT.md         copy of this specification (docs/format.md)
   schema/           schema dictionary (CDDL)
   recovery/         bundled reader software
   packs/ab/ab12…    packs; subdirectory = first two characters of the name
-  index/            index segments (cache)
-  snapshots/        snapshot headers (cache)
-  condemned/        condemnation records
-  locks/            writer lock
+  index/            index segments (cache; W)
+  snapshots/        snapshot headers (cache; W)
+  condemned/        condemnation records (W)
+  locks/            writer lock (plaintext)
 ```
 
 7.1. FORMAT.md, schema/, and recovery/ are plaintext. They contain no data of the owner.
@@ -275,7 +300,7 @@ vault/
 3. Index segments.
 4. Snapshot header.
 
-8.3. The snapshot header completes the commit. Before that step, the new data is not part of the vault.
+8.3. The snapshot header completes the commit. Before that step, the new data is not part of the vault. The journal entry that the snapshot header names becomes the journal head (see 5.5.8).
 
 8.4. During a long synchronization, NilPerit SHOULD commit at intervals (for example every N MiB or every N minutes). A failure then loses only the work since the last commit.
 
@@ -293,7 +318,7 @@ vault/
 
 9.3. A reader MUST reject an object when its AEAD tag is not correct.
 
-9.4. A reader MUST reject a snapshot header that it cannot authenticate.
+9.4. A reader MUST reject a snapshot header, condemnation record, or index segment when its AEAD tag is not correct. It MUST reject a vault config when its MAC is not correct (see 3.3.7 and 3.3.8).
 
 9.5. When the format version of a vault is higher than the version that the reader knows, the reader MUST stop. It MUST tell the person to use a newer version or the bundled reader of the vault.
 
@@ -326,12 +351,16 @@ vault/
 
 11.3. NilPerit MUST NOT remove data immediately. The procedure has two steps:
 
-1. **Condemn.** After each synchronization, NilPerit applies the retention rules. It writes a condemnation record for each expired root: a snapshot, a journal range, or an archive entry. A condemnation record does not remove data. NilPerit can revoke it.
-2. **Sweep.** NilPerit starts from all live roots: snapshots, journal entries, checkpoints, and archive trees that no active condemnation record marks. It finds all objects that these roots use. An object that no live root uses is unreachable.
-3. NilPerit removes a pack only when all objects in the pack are unreachable and the newest condemnation record that made them unreachable is older than the grace period. Orphan packs become eligible after the grace period too.
-4. NilPerit rewrites (repacks) a pack when more than a configurable part of it (default 30 %) is unreachable.
+1. **Condemn.** After each synchronization, NilPerit applies the retention rules. It writes a condemnation record for each expired root: a journal range or an archive entry. A condemnation record does not remove data. NilPerit can revoke it.
+2. **Sweep.**
+   1. NilPerit starts from all live roots: the journal heads, and all journal entries, checkpoints, checkpoint trees, and archive trees that no active condemnation record marks.
+   2. It finds all objects that these roots use. An object that no live root uses is unreachable.
+   3. It removes a pack only when all objects in the pack are unreachable and the newest condemnation record that made them unreachable is older than the grace period. Orphan packs become eligible after the grace period too.
+   4. It rewrites (repacks) a pack when more than a configurable part of it (default 30 %) is unreachable.
 
-11.4. A sweep MUST find live objects from the truth. It MUST NOT use reference counts.
+11.3.1. Snapshots are caches, so they are not roots. To remove snapshots, NilPerit first writes a new checkpoint (or a combined delta entry) that keeps all state that retention still needs. Then it condemns the journal range of the removed snapshots.
+
+11.4. A sweep MUST find live objects from the live roots, which are truth. It MUST NOT use reference counts or caches.
 
 11.5. A sweep MUST hold the writer lock.
 
@@ -363,6 +392,7 @@ The items below are not fixed in this draft:
 - Exact values of the chunking profiles (5.2.4).
 - Pack header layout and magic bytes (6.3).
 - Number and names of vault config copies (7.2).
+- Key derivation for the W keys of files outside packs and for the vault config MAC (3.3.7, 3.3.8).
 - Contents and names in recovery/ (7.3).
 - Parity data format (10.4).
 - Object type IDs and the field numbers of each object type (schema dictionary).

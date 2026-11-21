@@ -55,7 +55,7 @@ nilperit-connector-*, nilperit-node
 ## Documentation conventions
 
 - `docs/format.md` and `docs/glossary.md` are written in loose ASD-STE100 Simplified Technical English with RFC 2119 keywords: short sentences, one statement per sentence, active voice, consistent terms.
-- ADRs are plain English. Do not rewrite an accepted ADR; add a new one that supersedes it.
+- ADRs are plain English. Until format version 1, ADRs may be corrected in place. From format version 1 on, do not rewrite an accepted ADR; add a new one that supersedes it.
 - A change to the format updates `format.md` in the same pull request.
 - A new term goes into the glossary before it is used elsewhere.
 - Use American English spelling in all documents and code comments.

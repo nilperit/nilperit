@@ -10,7 +10,7 @@ Keys must be owned by the user, never by a cloud service. A node may run unatten
 ## Decision
 
 - At vault creation, NilPerit generates a 32-byte **root seed**, shown once as a 24-word **recovery phrase** (BIP39). All keys derive from it.
-- Derived keys: **read key** (hybrid key pair, owner only), **dedup key** (keyed hash for chunk IDs), **writer key** (symmetric, for the node's own bookkeeping), **chunker seed**.
+- Derived keys: **read key** (hybrid key pair, owner only), **dedup key** (keyed hash for object IDs, item keys and content hashes, with a separate domain separation tag per kind), **writer key** (symmetric; opens all W objects), **chunker seed**.
 - The **node credential** (read public key, dedup key, writer key, chunker seed) lets a node add data but not read stored content.
 - Objects get a **key class**: *R* for content and descriptive data (chunks, item records), which only the read key opens; *W* for the structure the node must read back (content objects, journal entries, trees, pack object tables), which the writer key opens. The owner can open both.
 - There is **one model only**: a single-PC setup simply holds both the node credential and the read key. No separate "simple mode".
@@ -19,9 +19,9 @@ Keys must be owned by the user, never by a cloud service. A node may run unatten
 ## Consequences
 
 - Recovery from any copy needs only the recovery phrase.
-- A compromised node reveals opaque item IDs, chunk and content IDs, sizes, sharing structure and sync times — never contents, subjects, file names or attachments.
+- A compromised node reveals opaque item keys, object IDs, sizes, sharing structure and sync times — never contents, subjects, file names or attachments.
 - With the dedup key, an attacker who controls the node could test whether a specific known file is in the vault ("confirmation of file"). Outsiders without the credential (disk thieves, future peers) learn nothing.
-- The dedup key on the node is unavoidable: the node must compute chunk IDs itself. An unkeyed hash would let *anyone* with a copy test for known files.
+- The dedup key on the node is unavoidable: the node must compute object IDs itself. An unkeyed hash would let *anyone* with a copy test for known files.
 
 ## Alternatives considered
 

@@ -92,8 +92,14 @@ The rules that control how long NilPerit keeps *item* versions and deleted items
 **Journal**
 The append-only chain of *journal entries* of one *source*. The journal is *truth*.
 
+**Journal head**
+The newest committed *journal entry* of a *source*: the entry that the newest authenticated *snapshot header* names. A new journal entry uses the journal head as its parent.
+
 **Journal entry**
 One immutable record in a *journal*: a *delta entry* or a *checkpoint*.
+
+**Journal position**
+The ID and *sequence number* of a *journal entry*. A *snapshot header* records the journal position of the *journal head* after that *snapshot*.
 
 **Key class**
 The class of key that encrypts an *object*. Class R: only the *read key* can open the object (*chunks*, *item records*). Class W: the *writer key* opens the object, so the *node* and the owner can read it (all other objects).
@@ -149,6 +155,9 @@ A copy of a *vault*, or of a part of a vault, on a *target*.
 **Salvage**
 A recovery procedure that scans all readable *packs* and rebuilds as much data as possible without *caches*.
 
+**Sequence number**
+The position of a *journal entry* in its *journal*: the sequence number of its parent plus one.
+
 **Seal**
 To encrypt a key so that only the holder of a private key can open it. NilPerit seals each *pack key* to the public part of the *read key* with a hybrid key encapsulation (X25519 and ML-KEM).
 
@@ -158,8 +167,11 @@ A procedure that reads stored data and checks its integrity.
 **Snapshot**
 The state of one *source* at one point in time.
 
+**Snapshot ID**
+The identifier of one *snapshot*.
+
 **Snapshot header**
-A small *cache* object that points to the *item map* of a *snapshot*. NilPerit writes it last during a *commit*.
+A small *cache* object that points to the *item map* of a *snapshot* and records the *journal position* of the *journal head*. NilPerit writes it last during a *commit*. It has *key class* W.
 
 **Snapshot retention**
 The rules that control which *snapshots* NilPerit keeps.
@@ -168,10 +180,13 @@ The rules that control which *snapshots* NilPerit keeps.
 One *connector* account with one selection, for example "Gmail, label Banking". Each source has its own *journal*, *snapshots*, retention rules (*snapshot retention* and *item retention*), and *priority*.
 
 **Sweep**
-A procedure that removes *packs* whose *objects* no live root uses any more, after the *grace period*. Live roots are *snapshots*, *journal entries*, *checkpoints*, and *archive trees* that no active *condemnation record* marks.
+A procedure that removes *packs* whose *objects* no live root uses any more, after the *grace period*. Live roots are the *journal heads*, and all *journal entries*, *checkpoints*, *checkpoint trees*, and *archive trees* that no active *condemnation record* marks. *Snapshots* are not roots, because they are *caches*.
 
 **Target**
 A storage location for a *vault* or a *replica*, for example a local disk, a USB stick, or a remote server.
+
+**Tree**
+A sorted, content-addressed tree of *objects* (a prolly tree). Trees share all unchanged subtrees. *Checkpoint trees*, *archive trees*, *item maps*, and *archive maps* are trees.
 
 **Truth**
 Immutable data that NilPerit cannot make again from other data in the *vault*: *chunks*, *content objects*, *item records*, *journal entries*, *checkpoint trees*, and *archive trees*.

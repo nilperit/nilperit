@@ -14,7 +14,7 @@ Thinning snapshots alone loses data: an email received and deleted between two k
   - **item retention**: how long item versions and deleted items stay (via the archive map). Thinning snapshots never removes anything from the archive.
 - An object stays while any rule of any source keeps it.
 - **Condemn now:** after each sync, retention writes condemnation records. Nothing is deleted, and a condemnation can be revoked (for example to abandon a failed sync and start over).
-- **Sweep later:** a separate, scheduled step starts from the live roots (snapshots, journal entries, checkpoints and archive trees that no active condemnation marks) and finds every reachable object. A pack goes only when all its objects are unreachable and the condemnation that made them so is older than the grace period. Packs with more than about 30 % unreachable objects are repacked. It never uses counters.
+- **Sweep later:** a separate, scheduled step starts from the live roots (the journal heads, and the journal entries, checkpoints, checkpoint trees and archive trees that no active condemnation marks; snapshots are caches, so removing them means compacting the journal and condemning the range) and finds every reachable object. A pack goes only when all its objects are unreachable and the condemnation that made them so is older than the grace period. Packs with more than about 30 % unreachable objects are repacked. It never uses counters.
 - When a target is full: alert, pause the lowest-priority sources first, and delete nothing automatically unless the owner opted in for that target.
 
 ## Consequences

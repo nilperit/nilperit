@@ -8,7 +8,8 @@ ADRs are written in plain English (not STE), because rationale and trade-offs re
 
 - One decision per file: `NNNN-short-title.md`, numbered in order.
 - Copy [0000-template.md](0000-template.md) to start a new one.
-- Accepted ADRs are not rewritten. To change a decision, write a new ADR that supersedes the old one, and set the old one's status to "Superseded by NNNN".
+- **Until format version 1**, ADRs may be corrected in place. The whole design is still a draft, and all ADRs so far were accepted together on one day; superseding them one by one would only add noise.
+- **From format version 1 on**, accepted ADRs are not rewritten. To change a decision, write a new ADR that supersedes the old one, and set the old one's status to "Superseded by NNNN". Fixing typos and broken links is always allowed.
 
 ## Index
 

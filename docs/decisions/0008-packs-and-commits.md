@@ -16,6 +16,8 @@ Millions of tiny files are slow, especially on USB media. A sync can crash, and 
 - The **object table** in the pack trailer (object ID, type, key class, offset, length) has key class W and holds only opaque values. A write-only node can therefore read it to rebuild the index and to sweep, without the read key.
 - **Commit order:** data packs → metadata packs → index segments → snapshot header last. Each file is written under a temporary name, synced, then renamed.
 - Long runs commit at intervals, so a crash loses only the last few minutes.
+- The **journal head** is the entry named by the newest authenticated snapshot header. A new entry always uses the head as its parent; an uncommitted entry left by a crash is an orphan and is never used as a parent. Entries carry a sequence number, so forks are detectable. If all headers are lost, a reader picks the valid entry with the highest sequence number.
+- Files outside packs are authenticated: snapshot headers, condemnation records and index segments are W objects (AEAD); the vault config is plaintext, because a reader needs its format version before it has keys, and carries a MAC. A node refuses to start when the read public key in the config differs from the one in its credential. Only the lock file is unauthenticated; tampering with it can stop a node but cannot change data.
 - **Do not trust the file system:** readers ignore packs whose hash does not match their name, and reject unauthenticated snapshot headers.
 - One writer per vault (lock with heartbeat); readers need no lock because files never change.
 
