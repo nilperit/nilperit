@@ -68,7 +68,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | R (read) | Chunks, item records | Only the holder of the read key |
 | W (writer) | Content objects, journal entries, checkpoint trees, archive trees, item map nodes, archive map nodes | The node and the owner |
 
-3.3.2. For R objects, each pack has a random 32-byte pack key. NilPerit MUST seal the pack key to the public part of the read key. The seal uses a hybrid KEM: X25519 and ML-KEM-768 together. A reader needs both secrets to open the seal. TBD: exact combiner construction.
+3.3.2. For R objects, each pack has a random 32-byte pack key. NilPerit MUST seal the pack key to the public part of the read key. The seal uses a hybrid KEM: X25519 and ML-KEM-768 together. A reader needs both secrets to open the seal. TBD: exact combiner construction (candidate: X-Wing).
 
 3.3.3. For W objects, NilPerit encrypts with a key that it derives from the writer key. TBD: per-pack derivation.
 
@@ -100,7 +100,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 4.6. The schema dictionary is in CDDL (RFC 8610). It lists each object type, each schema version, and each field: number, name, type, and description.
 
-4.7. **Object IDs.** The ID of each object is the keyed BLAKE3 hash of its plaintext encoding. The key is the dedup key. The hash input starts with the object type ID (domain separation). Length: 32 bytes. TBD: exact framing of the type ID, and a separate derived key for object IDs.
+4.7. **Object IDs.** The ID of each object is the keyed BLAKE3 hash of its plaintext encoding. The key is the dedup key. The hash input starts with the object type ID (domain separation). Length: 32 bytes. TBD: exact framing of the type ID.
 
 4.8. Because the ID depends only on the plaintext, the same object has the same ID in all replicas. The random nonce of the encryption does not change the ID.
 
@@ -136,7 +136,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 ### 5.3. Content object (truth)
 
-5.3.1. Fields: list of chunk IDs (in order), total length, keyed BLAKE3 hash of the full plaintext (key: dedup key), chunking profile ID.
+5.3.1. Fields: list of chunk IDs (in order), total length, keyed BLAKE3 hash of the full plaintext (key: dedup key, with its own domain separation tag), chunking profile ID.
 
 5.3.2. A content object has key class W. This lets the node find all chunks that an item uses, without the read key.
 
@@ -189,7 +189,9 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 5.6.4. Leaf entries of an archive tree and of an archive map: item key and item record ID → content object IDs, time first seen, time last seen.
 
-5.6.5. The item key is the keyed BLAKE3 hash of the native ID. The key is the dedup key. TBD: separate derived key for item keys.
+5.6.5. The item key is the keyed BLAKE3 hash of the source ID and the native ID. The key is the dedup key. The hash input starts with a domain separation tag for item keys.
+
+5.6.6. All keyed hashes that use the dedup key (object IDs, item keys, content hashes) MUST use different domain separation tags. Then a value of one kind can never be equal to a value of another kind.
 
 ### 5.7. Item map (cache)
 
@@ -354,11 +356,11 @@ vault/
 The items below are not fixed in this draft:
 
 - Key derivation context strings and final KDF choice (3.2.2).
-- Hybrid KEM combiner construction (3.3.2).
+- Hybrid KEM combiner construction (3.3.2); candidate: X-Wing (X25519 + ML-KEM-768).
+- ML-KEM implementation (3.3.2): RustCrypto `ml-kem` has never had an independent audit; `libcrux-ml-kem` (formally verified) is the main alternative.
 - Per-pack derivation of the W key (3.3.3).
-- Framing of the type ID in object IDs, and a separate derived key for object IDs (4.7).
+- Framing of the type ID in object IDs, and the domain separation tags (4.7, 5.6.6).
 - Exact values of the chunking profiles (5.2.4).
-- Separate derived key for item keys (5.6.5).
 - Pack header layout and magic bytes (6.3).
 - Number and names of vault config copies (7.2).
 - Contents and names in recovery/ (7.3).

@@ -5,7 +5,7 @@
 
 ## Context
 
-An archive is meant to last decades. Someone who copies an encrypted vault today could break classical key exchange (X25519) in the future with a quantum computer ("harvest now, decrypt later"). Post-quantum KEMs are now standardized (ML-KEM, FIPS 203) and available in Rust (RustCrypto `ml-kem`).
+An archive is meant to last decades. Someone who copies an encrypted vault today could break classical key exchange (X25519) in the future with a quantum computer ("harvest now, decrypt later"). Post-quantum KEMs are now standardized (ML-KEM, FIPS 203) and implemented in Rust.
 
 ## Decision
 
@@ -17,7 +17,8 @@ An archive is meant to last decades. Someone who copies an encrypted vault today
 
 - Protection against future quantum attacks on data written from now on.
 - Copies taken before a future algorithm change cannot be protected afterwards; crypto agility only protects what comes next. We accept this.
-- The exact combiner construction is still open (see format.md, open items).
+- The exact combiner construction is still open (see format.md, open items). X-Wing, a hybrid KEM that combines X25519 and ML-KEM-768 in one defined construction, is the main candidate.
+- The implementation is still open. As of November 2026, RustCrypto `ml-kem` states that it has never been independently audited. `libcrux-ml-kem` (Cryspen, formally verified) is the main alternative. For comparison: RustCrypto `chacha20poly1305` was audited by NCC Group (2020), and `curve25519-dalek` by Quarkslab (2019).
 
 ## Alternatives considered
 

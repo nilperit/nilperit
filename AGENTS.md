@@ -49,7 +49,7 @@ nilperit-connector-*, nilperit-node
 - Rust stable, pinned in `rust-toolchain.toml`. Format with `cargo fmt`; `cargo clippy` must pass without warnings.
 - No `unsafe` unless there is no alternative; every `unsafe` block needs a `// SAFETY:` comment.
 - Never log, print or include in error messages: keys, the recovery phrase, plaintext content, item titles or file names.
-- Use widely used, well-reviewed crypto crates (RustCrypto, `blake3`). Check and record the audit status of a crate before it handles key material. Never implement cryptographic primitives yourself.
+- Use widely used, well-reviewed crypto crates (RustCrypto, `blake3`). Check the audit status of a crate before it handles key material, and record it in the pull request (current known status: `docs/decisions/0012-post-quantum-hybrid.md`). Never implement cryptographic primitives yourself.
 - Add tests with every change. For format code, add round-trip and test-vector tests.
 
 ## Documentation conventions
