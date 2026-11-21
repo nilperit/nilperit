@@ -5,7 +5,7 @@
 
 ## Context
 
-An archive is meant to last decades. Someone who copies an encrypted vault today could break classical key exchange (X25519) in the future with a quantum computer ("harvest now, decrypt later"). Post-quantum KEMs are now standardised (ML-KEM, FIPS 203) and available in Rust (RustCrypto `ml-kem`).
+An archive is meant to last decades. Someone who copies an encrypted vault today could break classical key exchange (X25519) in the future with a quantum computer ("harvest now, decrypt later"). Post-quantum KEMs are now standardized (ML-KEM, FIPS 203) and available in Rust (RustCrypto `ml-kem`).
 
 ## Decision
 

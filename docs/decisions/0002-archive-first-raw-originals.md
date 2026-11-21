@@ -15,9 +15,9 @@ NilPerit's purpose is that data survives whatever happens in the cloud. Two goal
 
 ## Consequences
 
-- A byte-for-byte restore stays possible later, because nothing is lost or normalised.
+- A byte-for-byte restore stays possible later, because nothing is lost or normalized.
 - The same attachment in many emails deduplicates less well (it is base64-encoded inside each message). We accept this; it is a niche case.
-- A later optimisation can pass cut-point hints (for example MIME part boundaries) to the chunker without a format change, because content is just a list of chunks.
+- A later optimization can pass cut-point hints (for example MIME part boundaries) to the chunker without a format change, because content is just a list of chunks.
 
 ## Alternatives considered
 

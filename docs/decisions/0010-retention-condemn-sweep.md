@@ -14,14 +14,14 @@ Thinning snapshots alone loses data: an email received and deleted between two k
   - **item retention**: how long item versions and deleted items stay (via the archive map). Thinning snapshots never removes anything from the archive.
 - An object stays while any rule of any source keeps it.
 - **Condemn now:** after each sync, retention writes condemnation records. Nothing is deleted, and a condemnation can be revoked (for example to abandon a failed sync and start over).
-- **Sweep later:** a separate, scheduled step removes packs that are condemned past a grace period *and* unreachable from the live truth; it repacks packs with more than about 30 % waste. It never uses counters.
+- **Sweep later:** a separate, scheduled step starts from the live roots (snapshots, journal entries, checkpoints and archive trees that no active condemnation marks) and finds every reachable object. A pack goes only when all its objects are unreachable and the condemnation that made them so is older than the grace period. Packs with more than about 30 % unreachable objects are repacked. It never uses counters.
 - When a target is full: alert, pause the lowest-priority sources first, and delete nothing automatically unless the owner opted in for that target.
 
 ## Consequences
 
 - A hiccup at worst leaves dangling data for the next sweep; it never deletes live data.
 - Sweep cost scales with metadata, not data.
-- The node can sweep without the read key, because journal entries and content objects carry the IDs it needs.
+- The node can sweep without the read key, because object tables, journal entries, trees and content objects all have key class W (see ADR 0008).
 
 ## Alternatives considered
 

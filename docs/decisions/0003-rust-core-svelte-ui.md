@@ -10,7 +10,7 @@ NilPerit has security- and performance-critical parts (crypto, storage, connecto
 ## Decision
 
 - **Rust** for the core, connectors, node daemon, CLI and the API. The API runs inside the node (for example `axum`), not as a separate service. The OpenAPI spec is generated from the Rust types (`utoipa`); TypeScript client types are generated from it.
-- **Decryption happens in the client.** The read key never leaves the user's device; the server serves encrypted objects. The reader and crypto crates are compiled to WebAssembly for this, so the browser runs the same audited code.
+- **Decryption happens in the client.** The read key never leaves the user's device; the server serves encrypted objects. The reader and crypto crates are compiled to WebAssembly for this, so the browser runs the same reviewed code.
 - **Svelte + TypeScript** for presentation only. It never handles keys or storage logic. It is built statically and embedded in the node binary; there is no Node.js at runtime.
 - Later, a desktop app via **Tauri**, reusing the same frontend.
 

@@ -9,13 +9,15 @@ Losing a piece of storage must never invalidate everything. If metadata (item ma
 
 ## Decision
 
-- **Truth** is only immutable data stored with the content in data packs: chunks, content objects, item records, and **journal entries**.
+- **Truth** is only immutable data stored with the content in data packs: chunks, content objects, item records, **journal entries**, **checkpoint trees** and **archive trees**.
 - Each source has an append-only **journal**:
   - a **delta entry** per sync, with only the changes;
-  - periodic **checkpoints** with the complete current state (an item map root, stored as truth, sharing unchanged subtrees like a git commit).
+  - periodic **checkpoints** with the complete state at that moment. A checkpoint points to two trees, both stored as truth and sharing unchanged subtrees like a git commit:
+    - the **checkpoint tree**: every item that exists at that moment;
+    - the **archive tree**: every item version that no longer exists but that item retention still keeps (old versions and deleted items), with first-seen and last-seen times.
 - **Current state = newest checkpoint + the deltas after it.** Checkpoints are written every N deltas or after a set time, so replay stays short.
-- **Cutting history** = condemning everything before a chosen checkpoint. The current state never depends on entries before its checkpoint.
-- Item maps, archive maps, the index and snapshot headers are **caches**, rebuildable from the truth.
+- **Cutting history** = choosing a checkpoint as the new base, making sure its archive tree holds every retained item version, then condemning everything before it. The current state and the retained archive never depend on entries before that checkpoint.
+- Item maps, archive maps, the index and snapshot headers are **caches**, rebuildable from the truth. Item maps and checkpoint trees share the same tree structure; the difference is that a checkpoint tree is stored as truth at checkpoint moments, while an item map is a view built for any snapshot.
 - An item record lives in the same data pack as its content.
 
 ## Consequences
@@ -24,6 +26,7 @@ Losing a piece of storage must never invalidate everything. If metadata (item ma
 - Losing a data pack costs only the items stored in it.
 - Metadata needs no special extra protection.
 - Journal entries are small deltas, so the cost is low.
+- Without the archive tree, cutting history would leave the archive map (a cache) as the only record of deleted items. The archive tree closes that gap.
 
 ## Alternatives considered
 

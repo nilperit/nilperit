@@ -11,7 +11,7 @@ Not all data is equally important: a banking folder matters more than a spam fol
 
 - A **source** is a connector account plus a selection, for example `gmail-banking` (label Banking), `gmail-spam`, or specific folders of a file store.
 - Each source has its own snapshots, journal, retention rules and a **priority**.
-- Priority drives: the order of synchronisation, the order of ingest within a run, the order of replica synchronisation (for example when a USB stick is inserted), and the order of cleanup under storage pressure.
+- Priority drives: the order of synchronization, the order of ingest within a run, the order of replica synchronization (for example when a USB stick is inserted), and the order of cleanup under storage pressure.
 - Packs do not mix priority classes where avoidable. Replica sync follows snapshot references, not pack lists, so deduplication across priorities never leaves a critical item incomplete.
 
 ## Consequences

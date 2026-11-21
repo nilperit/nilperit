@@ -17,7 +17,8 @@ If the code and `format.md` disagree, stop and ask. Do not silently follow eithe
 ## Non-negotiable principles
 
 - **Nothing is lost.** No code path may remove stored data except retention via condemn → sweep (ADR 0010).
-- **Truth vs cache.** Only chunks, content objects, item records and journal entries are truth. Everything else must be rebuildable from them (ADR 0007).
+- **Truth vs cache.** Only chunks, content objects, item records, journal entries, checkpoint trees and archive trees are truth. Everything else must be rebuildable from them (ADR 0007).
+- **Stable object IDs.** An object ID is a keyed hash of the stored plaintext bytes. Never decode and re-encode a stored object to hash or copy it (format.md §4.7–4.9).
 - **Damage stays local.** Never design a structure where one damaged file makes unrelated data unreadable.
 - **The write-only node.** Code that runs on a node must never require the private part of the read key (ADR 0004).
 - **Deterministic encoding.** Objects that are hashed must always encode to the same bytes (ADR 0006).
@@ -30,23 +31,25 @@ Strict one-way dependencies (ADR 0014):
 ```
 nilperit-format, nilperit-crypto   (no I/O; must build for wasm32)
         ▼
-nilperit-reader                    (no network clients, no OAuth)
+nilperit-reader ──────────► nilperit-wasm, nilperit-recover
+(I/O behind a trait; must build for wasm32)
         ▼
 nilperit-writer
         ▼
-nilperit-connector-*, nilperit-node, nilperit-wasm
+nilperit-connector-*, nilperit-node
 ```
 
 - Never add a dependency that points "upward" (for example reader → writer).
-- `nilperit-format`, `nilperit-crypto` and `nilperit-reader` must not depend on network, async runtime or OAuth crates.
-- `nilperit-recover` (reader-only binary) must build from the reader side only.
+- `nilperit-format`, `nilperit-crypto` and `nilperit-reader` must build for `wasm32-unknown-unknown`.
+- `nilperit-format`, `nilperit-crypto` and `nilperit-reader` must not depend on network clients, OAuth crates or a specific async runtime (such as tokio). Async traits are allowed in the reader, so the browser can use async `fetch` behind the storage trait.
+- `nilperit-wasm` and `nilperit-recover` depend on the reader side only, never on the writer.
 
 ## Code conventions
 
 - Rust stable, pinned in `rust-toolchain.toml`. Format with `cargo fmt`; `cargo clippy` must pass without warnings.
 - No `unsafe` unless there is no alternative; every `unsafe` block needs a `// SAFETY:` comment.
 - Never log, print or include in error messages: keys, the recovery phrase, plaintext content, item titles or file names.
-- Use well-known, audited crypto crates (RustCrypto, `blake3`). Never implement cryptographic primitives yourself.
+- Use widely used, well-reviewed crypto crates (RustCrypto, `blake3`). Check and record the audit status of a crate before it handles key material. Never implement cryptographic primitives yourself.
 - Add tests with every change. For format code, add round-trip and test-vector tests.
 
 ## Documentation conventions
@@ -55,6 +58,7 @@ nilperit-connector-*, nilperit-node, nilperit-wasm
 - ADRs are plain English. Do not rewrite an accepted ADR; add a new one that supersedes it.
 - A change to the format updates `format.md` in the same pull request.
 - A new term goes into the glossary before it is used elsewhere.
+- Use American English spelling in all documents and code comments.
 
 ## Git and pull requests
 
