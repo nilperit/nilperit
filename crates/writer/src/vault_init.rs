@@ -40,17 +40,10 @@ impl From<TargetError> for InitError {
     }
 }
 
-/// Makes a new vault on a target and returns its vault ID.
-///
-/// It refuses a target that has a config file, a pack or a snapshot header. It
-/// writes `config-a` and then `config-b` (format.md 7.2.5). The vault config has
-/// sequence 1, the public part of the read key of `seed`, and the default chunking
-/// profiles.
-pub async fn create_vault<T: WriteTarget, R: CryptoRng>(
-    target: &T,
-    seed: &RootSeed,
-    rng: &mut R,
-) -> Result<VaultId, InitError> {
+/// Checks that a target has no vault config, no pack and no snapshot header, so that
+/// `create_vault` can make a vault on it. A program can call this before it asks the
+/// person to do something that cannot be undone, such as writing down a recovery phrase.
+pub async fn check_empty<T: WriteTarget>(target: &T) -> Result<(), InitError> {
     for path in [CONFIG_A, CONFIG_B] {
         match target.len(path).await {
             Ok(_) => return Err(InitError::NotEmpty),
@@ -63,6 +56,21 @@ pub async fn create_vault<T: WriteTarget, R: CryptoRng>(
             return Err(InitError::NotEmpty);
         }
     }
+    Ok(())
+}
+
+/// Makes a new vault on a target and returns its vault ID.
+///
+/// It refuses a target that has a config file, a pack or a snapshot header. It
+/// writes `config-a` and then `config-b` (format.md 7.2.5). The vault config has
+/// sequence 1, the public part of the read key of `seed`, and the default chunking
+/// profiles.
+pub async fn create_vault<T: WriteTarget, R: CryptoRng>(
+    target: &T,
+    seed: &RootSeed,
+    rng: &mut R,
+) -> Result<VaultId, InitError> {
+    check_empty(target).await?;
 
     let mut id = [0u8; 16];
     rng.fill_bytes(&mut id);

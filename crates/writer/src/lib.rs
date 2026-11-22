@@ -22,4 +22,4 @@ pub use lock::{LockError, WriterLock};
 pub use pack_builder::{BuildError, BuiltPack, PackBuilder};
 pub use sync::{FailedItem, SyncError, SyncOptions, SyncReport, source_id, sync};
 pub use target::WriteTarget;
-pub use vault_init::{InitError, create_vault};
+pub use vault_init::{InitError, check_empty, create_vault};
