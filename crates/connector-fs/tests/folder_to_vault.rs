@@ -333,7 +333,9 @@ fn a_folder_that_cannot_be_read_deletes_nothing_from_the_vault() {
     assert_eq!((report.commits, report.items_unchanged), (0, 2));
 }
 
-#[cfg(unix)]
+// macOS does not allow a file name that is not valid UTF-8 (the error is EILSEQ), so the test
+// cannot make the file there.
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn a_name_that_is_not_text_comes_back_with_the_same_bytes() {
     use std::ffi::OsString;
