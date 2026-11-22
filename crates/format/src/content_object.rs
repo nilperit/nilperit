@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::envelope::{Envelope, EnvelopeError};
+use crate::fields::{read_array, read_hashes, read_u64};
 use crate::ids::{ContentHash, HASH_LEN, ObjectId};
 use crate::object_type;
 
@@ -37,6 +38,13 @@ pub enum ObjectError {
     MissingField(u64),
     /// A body field has the wrong CBOR type or the wrong size. The value is its key.
     BadField(u64),
+    /// The fields are valid one by one, but break a rule of the format. The text
+    /// says which rule.
+    Rule(&'static str),
+    /// The format version is higher than this code knows.
+    NewerFormat(u32),
+    /// An algorithm name is not known.
+    UnknownAlgorithm,
 }
 
 impl From<EnvelopeError> for ObjectError {
@@ -53,6 +61,9 @@ impl fmt::Display for ObjectError {
             Self::UnsupportedSchema(s) => write!(f, "schema version {s} is not supported"),
             Self::MissingField(k) => write!(f, "field {k} is missing"),
             Self::BadField(k) => write!(f, "field {k} is not valid"),
+            Self::Rule(rule) => write!(f, "object breaks a rule: {rule}"),
+            Self::NewerFormat(v) => write!(f, "format version {v} is newer than this reader"),
+            Self::UnknownAlgorithm => f.write_str("an algorithm name is not known"),
         }
     }
 }
@@ -119,11 +130,20 @@ impl ContentObject {
         let (mut chunks, mut size, mut content_hash, mut profile) = (None, None, None, None);
         for (key, raw) in envelope.fields()? {
             match key {
-                KEY_CHUNKS => chunks = Some(decode_chunks(raw)?),
-                KEY_SIZE => size = Some(decode_u64(raw, KEY_SIZE)?),
-                KEY_CONTENT_HASH => content_hash = Some(decode_hash(raw, KEY_CONTENT_HASH)?),
+                KEY_CHUNKS => {
+                    chunks = Some(
+                        read_hashes(raw, KEY_CHUNKS)?
+                            .into_iter()
+                            .map(ObjectId::from_bytes)
+                            .collect::<Vec<_>>(),
+                    );
+                }
+                KEY_SIZE => size = Some(read_u64(raw, KEY_SIZE)?),
+                KEY_CONTENT_HASH => {
+                    content_hash = Some(read_array::<HASH_LEN>(raw, KEY_CONTENT_HASH)?)
+                }
                 KEY_CHUNKING_PROFILE => {
-                    let value = decode_u64(raw, KEY_CHUNKING_PROFILE)?;
+                    let value = read_u64(raw, KEY_CHUNKING_PROFILE)?;
                     profile = Some(
                         u32::try_from(value)
                             .map_err(|_| ObjectError::BadField(KEY_CHUNKING_PROFILE))?,
@@ -142,39 +162,6 @@ impl ContentObject {
             chunking_profile: profile.ok_or(ObjectError::MissingField(KEY_CHUNKING_PROFILE))?,
         })
     }
-}
-
-fn decode_u64(raw: &[u8], key: u64) -> Result<u64, ObjectError> {
-    minicbor::Decoder::new(raw)
-        .u64()
-        .map_err(|_| ObjectError::BadField(key))
-}
-
-fn decode_hash(raw: &[u8], key: u64) -> Result<[u8; HASH_LEN], ObjectError> {
-    let bytes = minicbor::Decoder::new(raw)
-        .bytes()
-        .map_err(|_| ObjectError::BadField(key))?;
-    bytes.try_into().map_err(|_| ObjectError::BadField(key))
-}
-
-fn decode_chunks(raw: &[u8]) -> Result<Vec<ObjectId>, ObjectError> {
-    let bad = |_| ObjectError::BadField(KEY_CHUNKS);
-    let mut d = minicbor::Decoder::new(raw);
-    let count = d
-        .array()
-        .map_err(bad)?
-        .ok_or(ObjectError::BadField(KEY_CHUNKS))?;
-    // The input was checked as deterministic CBOR, so every item uses at least
-    // one byte. The count cannot be larger than the input.
-    let mut chunks = Vec::with_capacity(usize::try_from(count).unwrap_or(0).min(raw.len()));
-    for _ in 0..count {
-        let bytes = d.bytes().map_err(bad)?;
-        let id: [u8; HASH_LEN] = bytes
-            .try_into()
-            .map_err(|_| ObjectError::BadField(KEY_CHUNKS))?;
-        chunks.push(ObjectId::from_bytes(id));
-    }
-    Ok(chunks)
 }
 
 #[cfg(test)]

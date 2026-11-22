@@ -224,7 +224,9 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 5.2.1. The vault config contains a table of chunking profiles (see 7.2). Each profile has: ID, algorithm, minimum size, average size, maximum size.
 
-5.2.1.1. The ID is an unsigned integer. The IDs of this draft are 1, 2, and 3. NilPerit does not use the ID 0.
+5.2.1.1. The ID is an unsigned integer. The IDs of this draft are 1, 2, and 3. NilPerit does not use the ID 0. Each ID occurs once in the table.
+
+5.2.1.2. The minimum, average, and maximum sizes are unsigned integers below 2^32 (see 6.7.6).
 
 5.2.2. The table is append-only. NilPerit MUST NOT change or remove a profile.
 
@@ -293,7 +295,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 5.4.5.2. A native ID is a byte string of at least 1 byte. It is not a text string, because the names of files are not always valid text. The connector defines the meaning. Examples: a Gmail message ID, or the path of a file relative to the selected folder.
 
-5.4.5.3. A time is an integer: the number of milliseconds since 1970-01-01 00:00:00 UTC. A time before 1970 is a negative integer. A connector that knows a more exact time can put it in the metadata of the item record (see 5.4.1).
+5.4.5.3. A time is an integer: the number of milliseconds since 1970-01-01 00:00:00 UTC. A time before 1970 is a negative integer. A time MUST fit in a signed integer of 64 bits. A connector that knows a more exact time can put it in the metadata of the item record (see 5.4.1).
 
 ### 5.5. Journal entries (truth)
 
