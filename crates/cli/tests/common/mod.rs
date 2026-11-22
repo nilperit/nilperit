@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use nilperit_cli::{Environment, run};
+use nilperit_crypto::RootSeed;
 use std::fs;
 use std::future::Future;
 use std::path::PathBuf;
@@ -78,14 +79,20 @@ impl Outcome {
     }
 }
 
-/// Runs the program in the process, with real randomness.
+/// Runs the program in the process, with real randomness and no input.
 pub fn nilperit(args: &[&str], env: &Environment) -> Outcome {
+    nilperit_with_input(args, env, "")
+}
+
+/// Runs the program in the process, with real randomness and this text as its input.
+pub fn nilperit_with_input(args: &[&str], env: &Environment, input: &str) -> Outcome {
     let mut out = Vec::new();
     let mut err = Vec::new();
     let mut rng = rand_core::UnwrapErr(getrandom::SysRng);
     let code = run(
         std::iter::once("nilperit").chain(args.iter().copied()),
         env,
+        &mut std::io::Cursor::new(input.as_bytes()),
         &mut out,
         &mut err,
         &mut rng,
@@ -102,6 +109,7 @@ pub fn env(dir: &TempDir) -> Environment {
     Environment {
         config_dir: Some(dir.0.join("config")),
         credential: None,
+        ..Environment::default()
     }
 }
 
@@ -125,4 +133,33 @@ pub fn vault_id(out: &str) -> String {
         .find_map(|l| l.strip_prefix("Vault ID: "))
         .unwrap()
         .to_string()
+}
+
+/// A vault that `init` made, with what the person was given.
+pub struct Made {
+    pub vault: PathBuf,
+    pub seed: RootSeed,
+    pub phrase: String,
+    pub id: String,
+}
+
+/// Makes a vault with `init` in the folder `name` of the test folder.
+pub fn init(dir: &TempDir, name: &str) -> Made {
+    let vault = dir.0.join(name);
+    let outcome = nilperit(&["init", vault.to_str().unwrap()], &env(dir));
+    assert!(outcome.succeeded(), "{}", outcome.err);
+    let phrase = phrase(&outcome.out);
+    Made {
+        vault,
+        seed: RootSeed::from_phrase(&phrase).unwrap(),
+        phrase,
+        id: vault_id(&outcome.out),
+    }
+}
+
+/// Writes a file below `root`, with its folders.
+pub fn write(root: &std::path::Path, path: &str, data: &[u8]) {
+    let full = root.join(path);
+    fs::create_dir_all(full.parent().unwrap()).unwrap();
+    fs::write(full, data).unwrap();
 }

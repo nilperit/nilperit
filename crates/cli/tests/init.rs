@@ -86,6 +86,7 @@ fn init_names_the_credential_file_when_asked() {
     let env = Environment {
         config_dir: None,
         credential: Some(from_env.clone()),
+        ..Environment::default()
     };
     assert!(success(&nilperit(
         &["init", second.to_str().unwrap()],
