@@ -8,11 +8,13 @@ use core::future::Future;
 use core::pin::pin;
 use core::task::{Context, Poll, Waker};
 use nilperit_crypto::seal::KEM_NAME;
-use nilperit_crypto::{AeadKey, DedupKey, ReadKey, WriterKey, encrypt, seal_pack_key};
-use nilperit_format::pack::FOOTER_SIZE;
+use nilperit_crypto::{
+    AeadKey, DedupKey, ReadKey, RootSeed, WriterKey, config_mac, encrypt, seal_pack_key,
+};
+use nilperit_format::pack::{ENCRYPTION_XCHACHA20_POLY1305, FOOTER_SIZE, HASH_BLAKE3};
 use nilperit_format::{
-    Compression, Footer, Header, KeyClass, ObjectId, ObjectTable, ObjectTableEntry, PackClass,
-    Trailer,
+    ChunkingProfile, Compression, Footer, Header, KeyClass, ObjectId, ObjectTable,
+    ObjectTableEntry, PackClass, Trailer, VaultConfig, VaultEssentials, VaultId, join_config_file,
 };
 use x_wing::kem::common::rand_core::{TryCryptoRng, TryRng};
 
@@ -114,6 +116,15 @@ impl TestKeys {
         }
     }
 
+    /// The keys that a vault with this root seed has.
+    pub fn from_seed(seed: &RootSeed) -> Self {
+        Self {
+            writer: seed.writer_key(),
+            read: seed.read_key(),
+            dedup: seed.dedup_key(),
+        }
+    }
+
     pub fn keys(&self) -> crate::Keys {
         crate::Keys::new(
             WriterKey::from_bytes(*self.writer.as_bytes()),
@@ -197,4 +208,33 @@ pub fn build_pack(keys: &TestKeys, objects: &[TestObject]) -> (Vec<u8>, Vec<Obje
         trailer_offset + trailer.len() as u64 + FOOTER_SIZE as u64
     );
     (pack, ids)
+}
+
+/// A vault config for the root seed.
+pub fn config(seed: &RootSeed, sequence: u64, vault_id: u8) -> VaultConfig {
+    VaultConfig {
+        essentials: VaultEssentials {
+            format_version: 0,
+            vault_id: VaultId::from_bytes([vault_id; 16]),
+            encryption: ENCRYPTION_XCHACHA20_POLY1305.to_string(),
+            hash: HASH_BLAKE3.to_string(),
+            key_encapsulation: KEM_NAME.to_string(),
+            read_public_key: seed.read_key().public_key().to_bytes().to_vec(),
+        },
+        sequence,
+        chunking_profiles: alloc::vec![ChunkingProfile {
+            id: 1,
+            algorithm: "fastcdc-2020".to_string(),
+            min_size: 65536,
+            avg_size: 262_144,
+            max_size: 1_048_576,
+        }],
+    }
+}
+
+/// The bytes of a config file that `seed` authenticates.
+pub fn file_with_key(config: &VaultConfig, seed: &RootSeed) -> Vec<u8> {
+    let map = config.encode().unwrap();
+    let mac = config_mac(&seed.writer_key().config_mac_key(), &map);
+    join_config_file(&map, &mac).unwrap()
 }

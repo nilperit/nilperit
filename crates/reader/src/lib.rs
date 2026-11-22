@@ -11,6 +11,7 @@
 
 extern crate alloc;
 
+pub mod index;
 pub mod keys;
 pub mod layout;
 pub mod memory_target;
@@ -20,6 +21,7 @@ pub mod target;
 mod test_util;
 pub mod vault;
 
+pub use index::PackIndex;
 pub use keys::Keys;
 pub use memory_target::MemoryTarget;
 pub use pack::{ObjectReadError, Pack, PackOpenError};

@@ -92,6 +92,10 @@ impl<T: Target> Vault<T> {
         pack.read_object(&self.target, id, &self.keys).await
     }
 
+    pub(crate) fn target(&self) -> &T {
+        &self.target
+    }
+
     /// The vault config that the reader uses.
     pub fn config(&self) -> &VaultConfig {
         &self.config
@@ -158,12 +162,9 @@ fn check_config_file(
 mod tests {
     use super::*;
     use crate::memory_target::MemoryTarget;
-    use crate::test_util::block_on;
+    use crate::test_util::{block_on, config, file_with_key};
     use alloc::string::ToString;
     use alloc::vec;
-    use nilperit_crypto::config_mac;
-    use nilperit_format::pack::{ENCRYPTION_XCHACHA20_POLY1305, HASH_BLAKE3};
-    use nilperit_format::{ChunkingProfile, VaultEssentials, VaultId, join_config_file};
 
     const SEED: [u8; 32] = [7; 32];
 
@@ -171,35 +172,8 @@ mod tests {
         RootSeed::from_bytes(SEED)
     }
 
-    fn config(seed: &RootSeed, sequence: u64, vault_id: u8) -> VaultConfig {
-        VaultConfig {
-            essentials: VaultEssentials {
-                format_version: 0,
-                vault_id: VaultId::from_bytes([vault_id; 16]),
-                encryption: ENCRYPTION_XCHACHA20_POLY1305.to_string(),
-                hash: HASH_BLAKE3.to_string(),
-                key_encapsulation: KEM_NAME.to_string(),
-                read_public_key: seed.read_key().public_key().to_bytes().to_vec(),
-            },
-            sequence,
-            chunking_profiles: vec![ChunkingProfile {
-                id: 1,
-                algorithm: "fastcdc-2020".to_string(),
-                min_size: 65536,
-                avg_size: 262_144,
-                max_size: 1_048_576,
-            }],
-        }
-    }
-
     fn file(config: &VaultConfig) -> Vec<u8> {
         file_with_key(config, &seed())
-    }
-
-    fn file_with_key(config: &VaultConfig, seed: &RootSeed) -> Vec<u8> {
-        let map = config.encode().unwrap();
-        let mac = config_mac(&seed.writer_key().config_mac_key(), &map);
-        join_config_file(&map, &mac).unwrap()
     }
 
     fn target(a: Option<Vec<u8>>, b: Option<Vec<u8>>) -> MemoryTarget {
