@@ -65,6 +65,7 @@ nilperit-connector-*, nilperit-node
 - Never log, print or include in error messages: keys, the recovery phrase or plaintext content. Never put item titles or file names in logs or in error values: they leave the machine in log files, mail and support bundles. The command-line program may show them as its direct output to the person at the terminal: always for `ls`, and with `-v` for `sync` and `restore`.
 - Use widely used, well-reviewed crypto crates (RustCrypto, `blake3`). Check the audit status of a crate before it handles key material, and record it in the pull request (current known status: `docs/decisions/0012-post-quantum-hybrid.md`). Never implement cryptographic primitives yourself.
 - Add tests with every change. For format code, add round-trip and test-vector tests.
+- Tests run on Linux and on Windows (CI). A test must not assume the separator of a path of the system (a native ID and a path of the vault always use `/`), a name that every file system accepts (Windows has other rules), or Unix permission bits. Put what is only true on Unix behind `#[cfg(unix)]`.
 - Make a test vector with an implementation other than the one under test (for example a Python script), so that it checks the specification and not only the code. Check that the hex in `docs/format.md` is the hex that the tests use.
 
 ## Documentation conventions

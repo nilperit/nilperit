@@ -46,6 +46,28 @@ jobs:
       - name: Check crate layering
         run: scripts/check-layering.sh
 
+  # The tests on Windows. Windows has other rules than Linux: the separator of a path, the
+  # names that a file cannot have, files that cannot be replaced while another program
+  # has them open, and no permission bits. Only the tests run here: format, clippy, the
+  # wasm32 build and the layering check do not depend on the system, and run on Linux.
+  test-windows:
+    # A fixed version, like the Linux job, so that a new image does not change the result.
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # rustup reads rust-toolchain.toml and installs the pinned toolchain on the first
+      # cargo command. `--no-fail-fast` runs every test suite, so that one run shows all
+      # the failures and not only the first suite that fails.
+      - name: Test
+        run: cargo test --workspace --locked --no-fail-fast
+
   deny:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
