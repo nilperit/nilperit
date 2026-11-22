@@ -16,6 +16,8 @@ pub mod memory_target;
 pub mod target;
 #[cfg(test)]
 mod test_util;
+pub mod vault;
 
 pub use memory_target::MemoryTarget;
 pub use target::{Target, TargetError};
+pub use vault::{Vault, VaultError};
