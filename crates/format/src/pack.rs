@@ -25,6 +25,9 @@ pub const MAX_HEADER_SIZE: u32 = 1 << 16;
 pub const MAX_SEAL_SIZE: u32 = 1 << 16;
 /// The largest allowed trailer, in bytes (format.md 6.7.6).
 pub const MAX_TRAILER_SIZE: u32 = 1 << 28;
+/// The largest allowed packed size and the largest allowed unpacked size of one object, in
+/// bytes (format.md 6.7.6). A reader needs memory for about twice this size to read one object.
+pub const MAX_OBJECT_SIZE: u32 = 1 << 30;
 /// The bytes that a packed object adds to its compressed bytes: nonce and tag.
 pub const PACKED_OBJECT_OVERHEAD: u32 = 40;
 /// The format version that this code reads and writes (format.md 12.5).

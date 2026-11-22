@@ -228,6 +228,10 @@ impl Pack {
         };
         let compressed = decrypt(&key, &associated_data(entry), &packed)
             .map_err(|_| ObjectReadError::NotAuthentic)?;
+        // The most that the reader holds at one time is two copies of an object of the
+        // limit (format.md 6.7.6): the packed bytes and the decrypted bytes, and then
+        // the decrypted bytes and the unpacked bytes.
+        drop(packed);
 
         let stored = match entry.compression {
             Compression::None => compressed,
@@ -605,6 +609,27 @@ mod tests {
                     Err(ObjectReadError::SizeMismatch | ObjectReadError::BadCompression)
                 ),
                 "{compression:?} {size}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_a_pack_that_claims_an_object_above_the_limit() {
+        use nilperit_format::{MAX_OBJECT_SIZE, PackError};
+        // The claim is 4 GiB. A reader that believed it would allocate that much for the
+        // output of a few bytes of DEFLATE.
+        for size in [MAX_OBJECT_SIZE + 1, u32::MAX] {
+            let mut object = TestObject::new(1, KeyClass::W, Compression::Deflate, &[0u8; 100]);
+            object.claim_unpacked_size = Some(size);
+            let keys = TestKeys::new(0x50);
+            let (bytes, _) = build_pack(&keys, &[object]);
+            let name = PackName::from_bytes(*blake3::hash(&bytes).as_bytes());
+            let target = MemoryTarget::new();
+            target.insert(&pack_path(&name), bytes);
+            let opened = block_on(Pack::open(&target, name, &keys.writer));
+            assert!(
+                matches!(opened, Err(PackOpenError::Format(PackError::TooLarge(_)))),
+                "{size}"
             );
         }
     }

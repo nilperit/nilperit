@@ -11,6 +11,7 @@
 use crate::credential::Credential;
 use nilperit_crypto::seal::KEM_NAME;
 use nilperit_crypto::{AeadKey, CryptoRng, SealError, encrypt, seal_pack_key};
+use nilperit_format::MAX_OBJECT_SIZE;
 use nilperit_format::pack::PACKED_OBJECT_OVERHEAD;
 use nilperit_format::{
     Compression, Footer, Header, KeyClass, ObjectId, ObjectTable, ObjectTableEntry, PackClass,
@@ -18,6 +19,16 @@ use nilperit_format::{
 };
 use std::collections::BTreeSet;
 use std::fmt;
+
+/// A size of an object as the object table has it, or `TooLarge` when it is above the limit
+/// of format.md 6.7.6. A reader rejects the whole pack of an object above the limit, so a
+/// writer must never make one.
+fn object_size(length: usize) -> Result<u32, BuildError> {
+    u32::try_from(length)
+        .ok()
+        .filter(|size| *size <= MAX_OBJECT_SIZE)
+        .ok_or(BuildError::TooLarge)
+}
 
 /// Why a pack could not be built.
 #[derive(Debug)]
@@ -126,11 +137,12 @@ impl<'a> PackBuilder<'a> {
     ) -> Result<ObjectId, BuildError> {
         let key_class =
             KeyClass::of_type(object_type).ok_or(BuildError::UnknownType(object_type))?;
+        // Before the hash and the encryption: an object that is too large costs nothing.
+        let unpacked_size = object_size(stored.len())?;
         let id = ObjectId::from_bytes(self.credential.domains().object_id(object_type, stored));
         if self.seen.contains(&id) {
             return Ok(id);
         }
-        let unpacked_size = u32::try_from(stored.len()).map_err(|_| BuildError::TooLarge)?;
 
         let (compression, compressed) = if compress {
             let deflated = miniz_oxide::deflate::compress_to_vec(stored, 6);
@@ -155,7 +167,7 @@ impl<'a> PackBuilder<'a> {
         aad[..32].copy_from_slice(id.as_bytes());
         aad[32..].copy_from_slice(&object_type.to_le_bytes());
         let packed = encrypt(&key, &aad, to_encrypt, rng).map_err(|_| BuildError::Encryption)?;
-        let packed_size = u32::try_from(packed.len()).map_err(|_| BuildError::TooLarge)?;
+        let packed_size = object_size(packed.len())?;
         debug_assert_eq!(
             packed_size,
             to_encrypt.len() as u32 + PACKED_OBJECT_OVERHEAD
@@ -251,6 +263,19 @@ mod tests {
     use nilperit_format::object_type::{CHUNK, CONTENT_OBJECT, DELTA_ENTRY, ITEM_RECORD};
     use nilperit_reader::layout::pack_path;
     use nilperit_reader::{Keys, MemoryTarget, ObjectReadError, Pack};
+
+    #[test]
+    fn an_object_above_the_limit_is_too_large_and_the_limit_itself_is_not() {
+        let limit = MAX_OBJECT_SIZE as usize;
+        assert_eq!(object_size(0).unwrap(), 0);
+        assert_eq!(object_size(limit).unwrap(), MAX_OBJECT_SIZE);
+        assert!(matches!(object_size(limit + 1), Err(BuildError::TooLarge)));
+        assert!(matches!(
+            object_size(u32::MAX as usize),
+            Err(BuildError::TooLarge)
+        ));
+        assert!(matches!(object_size(usize::MAX), Err(BuildError::TooLarge)));
+    }
 
     fn seed() -> RootSeed {
         RootSeed::from_bytes([7; 32])

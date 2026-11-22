@@ -16,7 +16,7 @@ ADR 0008 chose packs with a header, a body, a trailer and a footer. The details 
 - The **object table** is an enveloped object (type 3), encrypted with its own key. Its associated data is the hash of the header, so the header is authenticated. Entries are positional arrays, because the table is the most repetitive structure in the vault and has a schema version.
 - The **pack key** for R objects stays random per pack and sealed. The layout treats the seal as opaque bytes with a size, so the choice of the key encapsulation algorithm does not change the layout.
 - **W keys** derive from the writer key, one per purpose (pack objects, object tables). There is no per-pack derivation.
-- **Limits** protect the reader from claims of a damaged or hostile table: 4 GiB per object, 256 MiB for the trailer, 64 KiB for the header and for the seal. Offsets are 64-bit. The limits do not limit the size of a file or of a vault, because content is chunked.
+- **Limits** protect the reader from claims of a damaged or hostile table: 1 GiB per object (for the packed size and for the unpacked size), 256 MiB for the trailer, 64 KiB for the header and for the seal. Offsets are 64-bit. The limits do not limit the size of a file or of a vault, because content is chunked.
 - **The pack is the unit of damage.** The trailer is a single point of failure for its pack.
 
 ## Consequences

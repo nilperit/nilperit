@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use crate::envelope::Envelope;
 use crate::ids::{HASH_LEN, ObjectId};
 use crate::object_type;
-use crate::pack::{PACKED_OBJECT_OVERHEAD, PackError};
+use crate::pack::{MAX_OBJECT_SIZE, PACKED_OBJECT_OVERHEAD, PackError};
 
 const KEY_ENTRIES: u64 = 1;
 const ENTRY_ITEMS: u64 = 7;
@@ -212,6 +212,10 @@ impl ObjectTable {
         let mut position = header_len as u64;
         let mut seen = BTreeSet::new();
         for entry in &self.entries {
+            // First of all: nothing else is worth a check when a size is a claim of 4 GiB.
+            if entry.packed_size > MAX_OBJECT_SIZE || entry.unpacked_size > MAX_OBJECT_SIZE {
+                return Err(PackError::TooLarge("an object"));
+            }
             if entry.offset != position {
                 return Err(PackError::Layout(
                     "packed objects are not in order without gaps",
@@ -498,5 +502,58 @@ mod tests {
             entries: vec![huge],
         };
         assert!(overflow.validate(usize::MAX, u64::MAX, 0).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_an_object_above_the_size_limit() {
+        // The sizes are claims: no memory is needed to check them.
+        let limit = MAX_OBJECT_SIZE;
+        let at_limit = ObjectTable {
+            entries: vec![ObjectTableEntry {
+                unpacked_size: limit,
+                ..entry(1, 100, limit)
+            }],
+        };
+        assert!(at_limit.validate(100, 100 + u64::from(limit), 0).is_ok());
+
+        let packed_too_large = ObjectTable {
+            entries: vec![entry(1, 100, limit + 1)],
+        };
+        assert!(matches!(
+            packed_too_large.validate(100, 101 + u64::from(limit), 0),
+            Err(PackError::TooLarge(_))
+        ));
+        let unpacked_too_large = ObjectTable {
+            entries: vec![ObjectTableEntry {
+                unpacked_size: limit + 1,
+                ..entry(1, 100, 50)
+            }],
+        };
+        assert!(matches!(
+            unpacked_too_large.validate(100, 150, 0),
+            Err(PackError::TooLarge(_))
+        ));
+        // The claim of the largest number that the field holds.
+        let claimed = ObjectTable {
+            entries: vec![ObjectTableEntry {
+                unpacked_size: u32::MAX,
+                ..entry(1, 100, 50)
+            }],
+        };
+        assert!(matches!(
+            claimed.validate(100, 150, 0),
+            Err(PackError::TooLarge(_))
+        ));
+        // A second object cannot hide behind a good first one.
+        let second = ObjectTable {
+            entries: vec![
+                entry(1, 100, 50),
+                ObjectTableEntry {
+                    unpacked_size: limit + 1,
+                    ..entry(2, 150, 60)
+                },
+            ],
+        };
+        assert!(second.validate(100, 210, 0).is_err());
     }
 }

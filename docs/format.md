@@ -225,7 +225,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 5.2.1.1. The ID is an unsigned integer. The IDs of this draft are 1, 2, and 3. NilPerit does not use the ID 0. Each ID occurs once in the table.
 
-5.2.1.2. The minimum, average, and maximum sizes are unsigned integers below 2^32 (see 6.7.6).
+5.2.1.2. The minimum, average, and maximum sizes are unsigned integers below 2^32. The maximum size MUST NOT be above 2^30 bytes, because a chunk is an object (see 6.7.6). A reader MUST reject a vault config that has a profile with a larger maximum size.
 
 5.2.2. The table is append-only. NilPerit MUST NOT change or remove a profile.
 
@@ -587,14 +587,18 @@ This procedure can select an entry that was complete but not committed. That is 
 | Header size | At most 65536 bytes |
 | Seal size | At most 65536 bytes |
 | Trailer size | At most 2^28 bytes (256 MiB) |
-| Packed size of an object | Below 2^32 bytes (4 GiB) |
-| Unpacked size of an object | Below 2^32 bytes (4 GiB) |
+| Packed size of an object | At most 2^30 bytes (1 GiB) |
+| Unpacked size of an object | At most 2^30 bytes (1 GiB) |
 
 6.7.6.1. Offsets in the object table and in the footer are 64-bit values. A pack can be larger than 4 GiB.
 
 6.7.6.2. The limits do not limit the size of a file, of a vault, or the number of packs. NilPerit cuts content into chunks (see 5.1) and a pack holds many objects. The limits only reject sizes that no writer makes.
 
 6.7.6.3. A reader MAY apply lower limits when it has little memory, for example in a browser. It then reports that an object is too large for this reader. This is not an error of the format.
+
+6.7.6.4. A writer MUST NOT write an object with a packed size or an unpacked size above the limit. A reader rejects the whole pack of such an object (see 6.7.3.5). The packed size is 40 bytes more than the compressed size (see 6.7.2.1), so an object that does not compress can have at most 2^30 − 40 bytes.
+
+6.7.6.5. A reader needs memory for two copies of an object at one time: the packed bytes and the decrypted bytes, and then the decrypted bytes and the unpacked bytes. With the limit above, this is about 2 GiB.
 
 6.7.7. **Damage.** The pack is the unit of damage. When a byte of a pack is damaged, the hash of the file no longer agrees with the name (see 9.2). When the trailer or the footer is damaged, a reader cannot read any object of the pack, because the object table and the sealed pack key are in the trailer. NilPerit repairs a pack from another replica or from parity data (see 10.3 and 10.4).
 
