@@ -1,9 +1,9 @@
-name: Main commit style
+name: Main commit check
 
 # Detects commits on main that do not follow Conventional Commits, for example
 # when someone edits the message at merge time. It cannot undo a merge; a red
 # run on main makes the deviation visible. Keep the pattern in sync with
-# pr-title.yml.
+# pr-title-check.yml.
 
 on:
   push:
