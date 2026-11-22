@@ -43,7 +43,11 @@ impl<'a> Fields<'a> {
             let k = d.u64().map_err(bad)?;
             let start = d.position();
             d.skip().map_err(bad)?;
-            out.push((k, &raw[start..d.position()]));
+            out.push((
+                k,
+                raw.get(start..d.position())
+                    .ok_or(ObjectError::BadField(key))?,
+            ));
         }
         Ok(Self(out))
     }
@@ -170,7 +174,7 @@ pub(crate) fn write_hashes<'a>(items: impl ExactSizeIterator<Item = &'a [u8]>) -
 /// A map with unsigned integer keys. The keys MUST be in ascending order, which
 /// is the deterministic order.
 pub(crate) fn write_map(fields: &[(u64, Vec<u8>)]) -> Vec<u8> {
-    debug_assert!(fields.windows(2).all(|w| w[0].0 < w[1].0));
+    debug_assert!(fields.windows(2).all(|w| matches!(w, [a, b] if a.0 < b.0)));
     let mut out = encode_with(|e| {
         let _ = e.map(fields.len() as u64);
     });

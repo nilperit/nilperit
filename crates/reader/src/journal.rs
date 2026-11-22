@@ -113,7 +113,11 @@ impl<T: Target> Vault<T> {
                 items.remove(key);
             }
         }
-        let head_entry = &chain[0];
+        // The loop above pushes at least one entry.
+        let head_entry = chain.first().ok_or(JournalError::Inconsistent(
+            head.journal_entry,
+            "no entry in the chain",
+        ))?;
         Ok(SourceState {
             source_id: head.source_id,
             sequence: head_entry.sequence,

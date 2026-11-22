@@ -164,10 +164,14 @@ impl Header {
         let prefix = prefix
             .get(..HEADER_PREFIX_SIZE)
             .ok_or(PackError::Truncated)?;
-        if prefix[..8] != MAGIC {
+        let (magic, rest) = prefix
+            .split_first_chunk::<8>()
+            .ok_or(PackError::Truncated)?;
+        if *magic != MAGIC {
             return Err(PackError::BadMagic);
         }
-        let size = u32::from_le_bytes([prefix[8], prefix[9], prefix[10], prefix[11]]);
+        let size = rest.first_chunk::<4>().ok_or(PackError::Truncated)?;
+        let size = u32::from_le_bytes(*size);
         if size > MAX_HEADER_SIZE {
             return Err(PackError::TooLarge("header"));
         }
@@ -359,12 +363,11 @@ pub struct Trailer<'a> {
 impl<'a> Trailer<'a> {
     /// Splits the bytes of a trailer.
     pub fn decode(bytes: &'a [u8]) -> Result<Self, PackError> {
-        let size = bytes.get(..4).ok_or(PackError::Truncated)?;
-        let seal_size = u32::from_le_bytes([size[0], size[1], size[2], size[3]]);
+        let (size, rest) = bytes.split_first_chunk::<4>().ok_or(PackError::Truncated)?;
+        let seal_size = u32::from_le_bytes(*size);
         if seal_size > MAX_SEAL_SIZE {
             return Err(PackError::TooLarge("seal"));
         }
-        let rest = &bytes[4..];
         let seal_size = seal_size as usize;
         if rest.len() < seal_size {
             return Err(PackError::Truncated);
@@ -414,6 +417,42 @@ pub(crate) mod tests {
 
     pub(crate) fn pack() -> Vec<u8> {
         unhex(PACK_HEX)
+    }
+
+    #[test]
+    fn the_length_from_a_prefix_checks_every_part() {
+        let mut prefix = [0u8; HEADER_PREFIX_SIZE];
+        prefix[..8].copy_from_slice(&MAGIC);
+        prefix[8..].copy_from_slice(&100u32.to_le_bytes());
+        assert_eq!(
+            Header::len_from_prefix(&prefix),
+            Ok(HEADER_PREFIX_SIZE + 100)
+        );
+        // Bytes after the prefix are not looked at.
+        let mut longer = prefix.to_vec();
+        longer.extend_from_slice(&[0xff; 50]);
+        assert_eq!(
+            Header::len_from_prefix(&longer),
+            Ok(HEADER_PREFIX_SIZE + 100)
+        );
+        for len in 0..HEADER_PREFIX_SIZE {
+            assert_eq!(
+                Header::len_from_prefix(&prefix[..len]),
+                Err(PackError::Truncated)
+            );
+        }
+        let mut bad_magic = prefix;
+        bad_magic[0] ^= 1;
+        assert_eq!(
+            Header::len_from_prefix(&bad_magic),
+            Err(PackError::BadMagic)
+        );
+        let mut too_large = prefix;
+        too_large[8..].copy_from_slice(&(MAX_HEADER_SIZE + 1).to_le_bytes());
+        assert_eq!(
+            Header::len_from_prefix(&too_large),
+            Err(PackError::TooLarge("header"))
+        );
     }
 
     #[test]

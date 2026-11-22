@@ -88,7 +88,11 @@ impl<'a> Envelope<'a> {
                 KEY_BODY => {
                     let start = d.position();
                     d.skip().map_err(|_| EnvelopeError::Malformed)?;
-                    body = Some(&stored[start..d.position()]);
+                    body = Some(
+                        stored
+                            .get(start..d.position())
+                            .ok_or(EnvelopeError::Malformed)?,
+                    );
                 }
                 _ => d.skip().map_err(|_| EnvelopeError::Malformed)?,
             }
@@ -144,7 +148,11 @@ fn fields_of(body: &[u8]) -> Result<Vec<(u64, &[u8])>, EnvelopeError> {
         let key = d.u64().map_err(|_| EnvelopeError::BadBody)?;
         let start = d.position();
         d.skip().map_err(|_| EnvelopeError::BadBody)?;
-        out.push((key, &body[start..d.position()]));
+        out.push((
+            key,
+            body.get(start..d.position())
+                .ok_or(EnvelopeError::BadBody)?,
+        ));
     }
     Ok(out)
 }
