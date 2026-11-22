@@ -8,6 +8,7 @@ Status: **Draft**.
 
 - Each term has one meaning. Do not use a different word for the same thing.
 - A term in *italics* in a definition has its own entry in this glossary.
+- Use "size" for a number of bytes: the size of an object, a pack, or a chunk. Use "length" only in CBOR terms, for example "indefinite-length".
 
 ## Terms
 
