@@ -94,7 +94,9 @@ fn times_before_1970_are_negative() {
     );
 }
 
-#[cfg(unix)]
+// macOS does not allow a file name that is not valid UTF-8 (the error is EILSEQ), so the test
+// cannot make the file there.
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn a_name_that_is_not_text_stays_bytes() {
     use std::ffi::OsString;
