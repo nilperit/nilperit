@@ -34,6 +34,10 @@ pub struct SourceItem {
     pub created: Option<i64>,
     /// The media type, for example `text/plain`.
     pub media_type: Option<String>,
+    /// How many bytes the content has, when the source knows it before the content is
+    /// read. It is only a hint, for the progress of a run: the engine counts the bytes
+    /// that it reads, and the item record has that size.
+    pub size: Option<u64>,
     /// Metadata that only the connector understands: one CBOR item, already
     /// encoded as deterministic CBOR (format.md 5.4.1.3).
     pub metadata: Option<Vec<u8>>,

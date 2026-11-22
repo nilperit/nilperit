@@ -50,6 +50,7 @@ Remove an item when it is done. The history is in git.
 
 - Section 11.3.1 of the format mentions a "combined delta entry" that the glossary does not define.
 - ADR 0007 says that an item record "lives" in the same pack as its content. Section 6.2 of the format says SHOULD.
+- **Progress of a connector.** The engine reports the step "listing the source", and a connector cannot say more yet. A folder with millions of files, and later a cloud source (connecting, signing in, a page of a list), shows only the time that the step takes. When the first connector needs it, `Connector::changes` gets a way to report (for example the number of items found so far). `nilperit-cli` has no `--quiet` flag, so a scheduled run always writes a line every 30 seconds to its error output. Add the flag if that is in the way.
 
 ## Before the first release (not about the format)
 

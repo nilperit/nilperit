@@ -4,14 +4,13 @@ use crate::credential::load_credential;
 use crate::environment::Environment;
 use crate::error::CliError;
 use crate::exec::block_on;
-use crate::phrase::read_seed;
+use crate::progress::{Reporter, Status};
 use nilperit_crypto::RootSeed;
 use nilperit_format::{SourceId, VaultConfig, VaultId, split_config_file};
 use nilperit_reader::layout::{CONFIG_A, CONFIG_B};
 use nilperit_reader::{PackIndex, Snapshots, Target, Vault, VaultError};
 use nilperit_target_fs::FsTarget;
 use nilperit_writer::Credential;
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -76,18 +75,23 @@ pub struct OpenVault {
     pub snapshots: Snapshots,
 }
 
-/// Gets the recovery phrase, opens the vault with it, and reads the index of the packs and
+/// Opens the vault with the keys of the recovery phrase, and reads the index of the packs and
 /// the snapshot headers. A pack or a header that cannot be used does not stop this: the
 /// caller finds them in `index.skipped()` and `snapshots.skipped()` (damage stays local).
+///
+/// The caller gets the phrase first, and then starts the reporter: the person must not be
+/// asked for a phrase while a line of progress is on the screen. A large vault takes time
+/// here, so the reporter tells the steps.
 pub fn open_vault(
     folder: &Path,
-    phrase_file: Option<&Path>,
-    env: &Environment,
-    stdin: &mut dyn BufRead,
+    seed: RootSeed,
+    reporter: &Reporter<'_, '_>,
 ) -> Result<OpenVault, CliError> {
-    let seed = read_seed(phrase_file, env, stdin)?;
+    reporter.report(Status::step("Opening the vault"));
     let vault = block_on(Vault::open(FsTarget::new(folder), &seed)).map_err(CliError::Vault)?;
+    reporter.report(Status::step("Reading the packs"));
     let index = block_on(vault.scan_packs()).map_err(|e| CliError::Vault(VaultError::Target(e)))?;
+    reporter.report(Status::step("Reading the snapshots"));
     let snapshots =
         block_on(vault.read_snapshots()).map_err(|e| CliError::Vault(VaultError::Target(e)))?;
     Ok(OpenVault {

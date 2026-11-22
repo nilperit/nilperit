@@ -35,6 +35,8 @@ pub(crate) fn failing(native_id: Vec<u8>, kind: io::ErrorKind) -> SourceItem {
         modified: None,
         created: None,
         media_type: None,
+        // It has nothing to read.
+        size: Some(0),
         metadata: None,
         contents: vec![Box::new(move || Err(io::Error::from(kind)))],
     }
@@ -49,6 +51,7 @@ pub(crate) fn file_item(path: PathBuf, relative: &Path, metadata: &fs::Metadata)
         modified: metadata.modified().ok().map(millis),
         created: metadata.created().ok().map(millis),
         media_type: None,
+        size: Some(metadata.len()),
         metadata: mode_metadata(metadata),
         contents: vec![open],
     }

@@ -4,10 +4,12 @@
 //! and never touch the environment of the process.
 
 use crate::error::CliError;
+use crate::progress::ProgressMode;
 use nilperit_format::VaultId;
 use std::ffi::OsString;
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// The surroundings of a run.
 #[derive(Clone, Debug, Default)]
@@ -20,7 +22,12 @@ pub struct Environment {
     /// Whether the input is a terminal. A command that needs the recovery phrase then
     /// asks for it, without showing what is typed. Otherwise it reads it from the input.
     pub interactive: bool,
+    /// How a command that takes time shows its progress, on the error output.
+    pub progress: ProgressMode,
 }
+
+/// The time between two lines of progress when the error output is not a terminal.
+const HEARTBEAT: Duration = Duration::from_secs(30);
 
 impl Environment {
     /// Reads the surroundings of the process: `XDG_CONFIG_HOME`, or `.config` in `HOME`,
@@ -40,6 +47,10 @@ impl Environment {
             config_dir,
             credential: var("NILPERIT_CREDENTIAL").map(PathBuf::from),
             interactive: std::io::stdin().is_terminal(),
+            progress: progress_mode(
+                std::io::stderr().is_terminal(),
+                var("TERM").is_some_and(|term| term == "dumb"),
+            ),
         }
     }
 
@@ -50,5 +61,33 @@ impl Environment {
         Ok(folder
             .join("nilperit")
             .join(format!("{vault_id}.credential")))
+    }
+}
+
+/// A line that is redrawn needs a terminal that does it. Otherwise a line now and then
+/// shows that the run is alive.
+fn progress_mode(stderr_is_terminal: bool, dumb_terminal: bool) -> ProgressMode {
+    if stderr_is_terminal && !dumb_terminal {
+        ProgressMode::Live
+    } else {
+        ProgressMode::Heartbeat(HEARTBEAT)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_terminal_gets_a_live_line_and_everything_else_gets_a_heartbeat() {
+        assert_eq!(progress_mode(true, false), ProgressMode::Live);
+        assert_eq!(
+            progress_mode(true, true),
+            ProgressMode::Heartbeat(HEARTBEAT)
+        );
+        assert_eq!(
+            progress_mode(false, false),
+            ProgressMode::Heartbeat(HEARTBEAT)
+        );
     }
 }

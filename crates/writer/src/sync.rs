@@ -15,6 +15,7 @@ use crate::connector::{Changes, Connector, ConnectorError, SourceItem};
 use crate::credential::Credential;
 use crate::lock::{LockError, WriterLock};
 use crate::pack_builder::{BuildError, BuiltPack, PackBuilder};
+use crate::progress::{Counts, Progress};
 use crate::target::WriteTarget;
 use nilperit_crypto::{CryptoRng, SizeError};
 use nilperit_format::object_type::{CHUNK, CONTENT_OBJECT, DELTA_ENTRY, ITEM_RECORD};
@@ -203,7 +204,39 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
     clock: impl Fn() -> i64,
     rng: &mut R,
 ) -> Result<SyncReport, SyncError> {
+    sync_with_progress(
+        lock,
+        credential,
+        source,
+        connector,
+        options,
+        clock,
+        rng,
+        &mut |_| {},
+    )
+    .await
+}
+
+/// Runs a source into the vault, and tells `progress` what the run is doing. The same
+/// as [`sync`] in every other way.
+///
+/// The callback runs on the thread of the run, after every chunk, so it must be quick.
+/// A report has numbers only, never a name or content (see [`Progress`]).
+// A function with the callback as the eighth argument is clearer than a struct that
+// only holds the arguments of this one function.
+#[allow(clippy::too_many_arguments)]
+pub async fn sync_with_progress<T: WriteTarget, C: Connector, R: CryptoRng>(
+    lock: &WriterLock<'_, T>,
+    credential: &Credential,
+    source: SourceId,
+    connector: &mut C,
+    options: &SyncOptions,
+    clock: impl Fn() -> i64,
+    rng: &mut R,
+    progress: &mut dyn FnMut(Progress),
+) -> Result<SyncReport, SyncError> {
     // What the vault holds now.
+    progress(Progress::OpeningVault);
     let vault = Vault::open_with(lock.target(), credential.reader_keys()).await?;
     let index = vault.scan_packs().await?;
     let snapshots = vault.read_snapshots().await?;
@@ -218,6 +251,7 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
 
     let (state, head) = match snapshots.head(&source) {
         Some(header) => {
+            progress(Progress::ReplayingJournal);
             let state = vault.replay_journal(&index, header).await?;
             let head = Head {
                 entry: header.journal_entry,
@@ -240,6 +274,7 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
     let start_cursor = state.as_ref().and_then(|s| s.connector_cursor.clone());
 
     // What the source has.
+    progress(Progress::ReadingSource);
     let Changes {
         complete,
         items,
@@ -247,7 +282,18 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
         cursor,
     } = connector.changes(start_cursor.as_deref()).await?;
 
+    let bytes_total = items
+        .iter()
+        .try_fold(0u64, |sum, item| Some(sum.saturating_add(item.size?)));
     let mut session = Session {
+        progress,
+        counts: Counts {
+            items_done: 0,
+            items_total: items.len() as u64,
+            bytes_done: 0,
+            bytes_total,
+        },
+        item_bytes: 0,
         lock,
         credential,
         vault: &vault,
@@ -266,11 +312,15 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
         report: SyncReport::default(),
     };
 
+    session.tell(false);
     let mut seen: BTreeSet<ItemKey> = BTreeSet::new();
     for item in items {
         if item.native_id.is_empty() {
             return Err(SyncError::EmptyNativeId);
         }
+        let hint = item.size;
+        // The bytes of this item that the progress has counted.
+        session.item_bytes = 0;
         let key = ItemKey::from_bytes(
             credential
                 .domains()
@@ -282,6 +332,7 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
                 native_id: item.native_id,
                 kind: io::ErrorKind::InvalidInput,
             });
+            session.item_finished(hint);
             continue;
         }
         let native_id = item.native_id.clone();
@@ -310,6 +361,7 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
             // deleted.
             Err(kind) => session.report.failed.push(FailedItem { native_id, kind }),
         }
+        session.item_finished(hint);
         if session.pending_bytes() >= options.commit_size && !session.pending.is_empty() {
             session
                 .commit(Vec::new(), session.stored_cursor.clone())
@@ -346,6 +398,10 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
 
 /// The state of one run.
 struct Session<'a, T: WriteTarget, R> {
+    progress: &'a mut dyn FnMut(Progress),
+    counts: Counts,
+    /// The bytes of the item that the run reads now, as the progress has counted them.
+    item_bytes: u64,
     lock: &'a WriterLock<'a, T>,
     credential: &'a Credential,
     vault: &'a Vault<&'a T>,
@@ -370,6 +426,26 @@ struct Session<'a, T: WriteTarget, R> {
 }
 
 impl<'a, T: WriteTarget, R: CryptoRng> Session<'a, T, R> {
+    /// Tells the caller how far the run is.
+    fn tell(&mut self, committing: bool) {
+        (self.progress)(if committing {
+            Progress::Committing(self.counts)
+        } else {
+            Progress::Reading(self.counts)
+        });
+    }
+
+    /// An item is finished: read, failed or dropped. The bytes that the run did not read
+    /// of it (all of them for an item that failed) are counted, so that the total of the
+    /// source is reached at the end.
+    fn item_finished(&mut self, hint: Option<u64>) {
+        if let Some(size) = hint {
+            self.counts.bytes_done += size.saturating_sub(self.item_bytes);
+        }
+        self.counts.items_done += 1;
+        self.tell(false);
+    }
+
     /// The size of the data that waits for a commit.
     fn pending_bytes(&self) -> u64 {
         let closed: usize = self.packs.iter().map(|pack| pack.bytes.len()).sum();
@@ -429,6 +505,8 @@ impl<'a, T: WriteTarget, R: CryptoRng> Session<'a, T, R> {
             media_type,
             metadata,
             contents,
+            // The size is a hint for the progress. The record has the size that was read.
+            size: _,
         } = item;
         let mut content_ids = Vec::new();
         let mut total: u64 = 0;
@@ -448,6 +526,9 @@ impl<'a, T: WriteTarget, R: CryptoRng> Session<'a, T, R> {
                 size += chunk.len() as u64;
                 hasher.update(&chunk);
                 chunk_ids.push(self.add(CHUNK, &chunk).await?);
+                self.item_bytes += chunk.len() as u64;
+                self.counts.bytes_done += chunk.len() as u64;
+                self.tell(false);
             }
             self.report.bytes_read += size;
             total += size;
@@ -487,6 +568,7 @@ impl<'a, T: WriteTarget, R: CryptoRng> Session<'a, T, R> {
         mut deleted: Vec<ItemKey>,
         cursor: Option<Vec<u8>>,
     ) -> Result<(), SyncError> {
+        self.tell(true);
         let mut changed = std::mem::take(&mut self.pending);
         changed.sort_by_key(|change| change.item_key);
         deleted.sort();
@@ -949,6 +1031,183 @@ mod tests {
         assert_eq!(report.failed.len(), 1);
         let state = read_state(&target, &seed(), &source).unwrap();
         assert_eq!(state.files, [("a".to_string(), b"first".to_vec())]);
+    }
+
+    /// Runs the engine like `run`, and returns what it told about its progress.
+    fn run_with_progress(
+        target: &MemoryTarget,
+        credential: &Credential,
+        source: SourceId,
+        connector: &mut impl Connector,
+        options: &SyncOptions,
+    ) -> (SyncReport, Vec<Progress>) {
+        let mut rng = TestRng::new(5);
+        let lock = block_on(WriterLock::acquire(target, NOW, STALE, &mut rng)).unwrap();
+        let mut told = Vec::new();
+        let report = block_on(sync_with_progress(
+            &lock,
+            credential,
+            source,
+            connector,
+            options,
+            || NOW,
+            &mut rng,
+            &mut |progress| told.push(progress),
+        ))
+        .unwrap();
+        let _ = block_on(lock.release());
+        (report, told)
+    }
+
+    fn counts(progress: &Progress) -> Option<Counts> {
+        match progress {
+            Progress::Reading(counts) | Progress::Committing(counts) => Some(*counts),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn tells_the_steps_of_a_run_in_order() {
+        let (target, credential, source) = setup();
+        let big = data(1, 600_000);
+        let mut connector =
+            ListConnector::new(&[("a", b"alpha"), ("big", &big), ("c", b"charlie")]);
+        let (_, first) = run_with_progress(
+            &target,
+            &credential,
+            source,
+            &mut connector,
+            &SyncOptions::default(),
+        );
+        // The first run has no journal to read.
+        assert_eq!(first[0], Progress::OpeningVault);
+        assert_eq!(first[1], Progress::ReadingSource);
+        assert!(!first.contains(&Progress::ReplayingJournal));
+        // The list is known before the first item is read.
+        assert_eq!(
+            first[2],
+            Progress::Reading(Counts {
+                items_done: 0,
+                items_total: 3,
+                bytes_done: 0,
+                bytes_total: Some(5 + 600_000 + 7),
+            })
+        );
+        assert!(matches!(first.last(), Some(Progress::Committing(_))));
+
+        // The next run reads the journal.
+        let (_, second) = run_with_progress(
+            &target,
+            &credential,
+            source,
+            &mut connector,
+            &SyncOptions::default(),
+        );
+        assert_eq!(
+            second[..3],
+            [
+                Progress::OpeningVault,
+                Progress::ReplayingJournal,
+                Progress::ReadingSource
+            ]
+        );
+    }
+
+    #[test]
+    fn the_counts_only_grow_and_reach_the_total() {
+        let (target, credential, source) = setup();
+        let big = data(2, 700_000);
+        let mut connector = ListConnector::new(&[("a", b"alpha"), ("big", &big)]);
+        connector
+            .items
+            .push(("broken".into(), Err(io::ErrorKind::PermissionDenied)));
+        let (report, told) = run_with_progress(
+            &target,
+            &credential,
+            source,
+            &mut connector,
+            &SyncOptions::default(),
+        );
+        assert_eq!(report.failed.len(), 1);
+        let all: Vec<Counts> = told.iter().filter_map(counts).collect();
+        for pair in all.windows(2) {
+            assert!(pair[0].items_done <= pair[1].items_done, "{pair:?}");
+            assert!(pair[0].bytes_done <= pair[1].bytes_done, "{pair:?}");
+        }
+        let last = all.last().unwrap();
+        // An item that failed counts as finished.
+        assert_eq!(last.items_done, 3);
+        assert_eq!(last.items_total, 3);
+        assert_eq!(last.bytes_done, 5 + 700_000);
+        assert_eq!(last.bytes_total, Some(5 + 700_000));
+    }
+
+    #[test]
+    fn a_large_item_reports_while_it_is_read() {
+        let (target, credential, source) = setup();
+        // Four chunks of the default profile (256 KiB) and a little more.
+        let big = data(3, 1_100_000);
+        let mut connector = ListConnector::new(&[("big", &big)]);
+        let (_, told) = run_with_progress(
+            &target,
+            &credential,
+            source,
+            &mut connector,
+            &SyncOptions::default(),
+        );
+        let inside: Vec<u64> = told
+            .iter()
+            .filter_map(counts)
+            .filter(|c| c.items_done == 0 && c.bytes_done > 0)
+            .map(|c| c.bytes_done)
+            .collect();
+        assert_eq!(inside.len(), 5, "{inside:?}");
+        assert!(inside.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn the_total_of_bytes_is_unknown_when_one_item_has_no_size() {
+        struct NoSizes(ListConnector);
+        impl Connector for NoSizes {
+            async fn changes(&mut self, cursor: Option<&[u8]>) -> Result<Changes, ConnectorError> {
+                let mut changes = self.0.changes(cursor).await?;
+                changes.items[1].size = None;
+                Ok(changes)
+            }
+        }
+        let (target, credential, source) = setup();
+        let mut connector = NoSizes(ListConnector::new(&[("a", b"alpha"), ("b", b"bravo")]));
+        let (_, told) = run_with_progress(
+            &target,
+            &credential,
+            source,
+            &mut connector,
+            &SyncOptions::default(),
+        );
+        assert!(
+            told.iter()
+                .filter_map(counts)
+                .all(|c| c.bytes_total.is_none())
+        );
+    }
+
+    #[test]
+    fn the_progress_of_a_commit_in_the_middle_of_a_run_is_told() {
+        let (target, credential, source) = setup();
+        let options = SyncOptions {
+            commit_size: 1,
+            pack_size: 1,
+            ..SyncOptions::default()
+        };
+        let mut connector = ListConnector::new(&[("a", b"alpha"), ("b", b"bravo")]);
+        let (report, told) =
+            run_with_progress(&target, &credential, source, &mut connector, &options);
+        let commits = told
+            .iter()
+            .filter(|p| matches!(p, Progress::Committing(_)))
+            .count();
+        assert_eq!(commits as u32, report.commits);
+        assert!(commits >= 2, "{commits}");
     }
 
     #[test]

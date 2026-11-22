@@ -17,10 +17,12 @@ mod environment;
 mod error;
 mod exec;
 mod phrase;
+mod progress;
 mod secret_file;
 
 pub use environment::Environment;
 pub use error::CliError;
+pub use progress::ProgressMode;
 
 use clap::Parser;
 use cli::{Cli, Command};
@@ -39,7 +41,7 @@ pub fn run<R: CryptoRng>(
     env: &Environment,
     stdin: &mut dyn BufRead,
     out: &mut dyn Write,
-    err: &mut dyn Write,
+    err: &mut (dyn Write + Send),
     rng: &mut R,
 ) -> ExitCode {
     let cli = match Cli::try_parse_from(args) {
@@ -59,7 +61,7 @@ pub fn run<R: CryptoRng>(
         Command::Init(args) => {
             commands::init::run(&args, env, out, rng).map(|()| ExitCode::SUCCESS)
         }
-        Command::Sync(args) => commands::sync::run(&args, env, out, rng),
+        Command::Sync(args) => commands::sync::run(&args, env, out, err, rng),
         Command::Ls(args) => commands::ls::run(&args, env, stdin, out, err),
         Command::Restore(args) => commands::restore::run(&args, env, stdin, out, err),
     };

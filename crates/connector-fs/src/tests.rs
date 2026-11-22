@@ -40,6 +40,8 @@ fn an_item_has_a_title_a_time_and_the_mode() {
     let item = &items[0];
     assert_eq!(item.title, "docs/a.txt");
     assert_eq!(item.media_type, None);
+    // The size is known before the file is read: the progress of a run uses it.
+    assert_eq!(item.size, Some(5));
     let modified = item.modified.unwrap();
     // Written in the last minutes.
     let now = millis(std::time::SystemTime::now());
@@ -122,7 +124,11 @@ fn a_symbolic_link_and_a_pipe_are_reported_and_not_followed() {
     fs::write(dir.0.join("real"), b"real").unwrap();
     std::os::unix::fs::symlink(outside.0.join("secret"), dir.0.join("to-file")).unwrap();
     std::os::unix::fs::symlink(&outside.0, dir.0.join("to-folder")).unwrap();
-    let (complete, listing, _) = run(&mut FolderConnector::new(&dir.0));
+    let (complete, listing, items) = run(&mut FolderConnector::new(&dir.0));
+    // An item that cannot be read has nothing to read, so the total of a run is still known.
+    let mut sizes: Vec<_> = items.iter().map(|item| item.size).collect();
+    sizes.sort();
+    assert_eq!(sizes, [Some(0), Some(0), Some(4)]);
     // The list is complete: a link is known, only not stored.
     assert!(complete);
     assert_eq!(

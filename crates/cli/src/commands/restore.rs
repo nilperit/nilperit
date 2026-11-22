@@ -24,6 +24,9 @@ use crate::display::size;
 use crate::environment::Environment;
 use crate::error::CliError;
 use crate::exec::block_on;
+use crate::phrase::read_seed;
+use crate::progress::{Reporter, Status, with_reporter};
+use nilperit_crypto::RootSeed;
 use nilperit_format::{ItemRecord, SourceId};
 use nilperit_reader::ContentError;
 use nilperit_writer::{Credential, source_id};
@@ -43,15 +46,40 @@ pub fn run(
     env: &Environment,
     stdin: &mut dyn BufRead,
     out: &mut dyn Write,
-    err: &mut dyn Write,
+    err: &mut (dyn Write + Send),
 ) -> Result<ExitCode, CliError> {
     // Check the arguments before the person types the phrase.
     let by_id = args.source_id.as_deref().map(parse_source_id).transpose()?;
     let filter = args.path.as_deref().map(parse_filter).transpose()?;
 
-    let open = open_vault(&args.vault, args.phrase.phrase_file.as_deref(), env, stdin)?;
+    let seed = read_seed(args.phrase.phrase_file.as_deref(), env, stdin)?;
+    // The report of the run is written when the line of progress is gone.
+    let report = with_reporter(err, env.progress, |reporter| {
+        restore_source(args, seed, by_id, filter.as_deref(), reporter)
+    })?;
+    report.show(out, err, args.verbose)?;
+    Ok(
+        if report.failed.is_empty() && report.unreadable_records == 0 {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(EXIT_WITH_WARNINGS)
+        },
+    )
+}
+
+/// Restores the items of one source, and tells how far it is. The vault is opened here, with
+/// the phrase that the person gave.
+fn restore_source(
+    args: &RestoreArgs,
+    seed: RootSeed,
+    by_id: Option<SourceId>,
+    filter: Option<&[u8]>,
+    reporter: &Reporter<'_, '_>,
+) -> Result<Report, CliError> {
+    let open = open_vault(&args.vault, seed, reporter)?;
     let source = choose_source(&open, args.name.as_deref(), by_id)?;
     let head = open.snapshots.head(&source).ok_or(CliError::NoSuchSource)?;
+    reporter.report(Status::step("Reading the journal"));
     let state =
         block_on(open.vault.replay_journal(&open.index, head)).map_err(CliError::Journal)?;
 
@@ -59,7 +87,13 @@ pub fn run(
     // and so they cannot be restored.
     let mut records: Vec<ItemRecord> = Vec::new();
     let mut unreadable_records = 0u64;
-    for (key, item) in &state.items {
+    let total_records = state.items.len() as u64;
+    for (done, (key, item)) in state.items.iter().enumerate() {
+        reporter.report(Status::items(
+            "Reading the items",
+            done as u64,
+            total_records,
+        ));
         match block_on(open.vault.read_item(&open.index, key, item)) {
             Ok(record) => records.push(record),
             Err(_) => unreadable_records += 1,
@@ -78,8 +112,31 @@ pub fn run(
         unreadable_records,
         ..Report::default()
     };
-    for record in &records {
-        match restore_item(&open, &destination, record) {
+    let count = records.len() as u64;
+    let total_bytes = records
+        .iter()
+        .fold(0u64, |sum, record| sum.saturating_add(record.size));
+    // The bytes of the items that are finished, restored or not: an item that is left alone
+    // is finished too, so that the progress reaches its end.
+    let mut finished_bytes = 0u64;
+    reporter.report(Status::transfer(
+        "Restoring",
+        (0, count),
+        0,
+        Some(total_bytes),
+    ));
+    for (done, record) in records.iter().enumerate() {
+        let done = done as u64;
+        let base = finished_bytes;
+        let mut written = |bytes: u64| {
+            reporter.report(Status::transfer(
+                "Restoring",
+                (done, count),
+                base.saturating_add(bytes.min(record.size)),
+                Some(total_bytes),
+            ));
+        };
+        match restore_item(&open, &destination, record, &mut written) {
             Ok(Done::Restored) => {
                 report.restored += 1;
                 report.bytes += record.size;
@@ -87,15 +144,15 @@ pub fn run(
             Ok(Done::Existing) => report.existing.push(record.native_id.clone()),
             Err(reason) => report.failed.push((record.native_id.clone(), reason)),
         }
+        finished_bytes = finished_bytes.saturating_add(record.size);
+        reporter.report(Status::transfer(
+            "Restoring",
+            (done + 1, count),
+            finished_bytes,
+            Some(total_bytes),
+        ));
     }
-    report.show(out, err, args.verbose)?;
-    Ok(
-        if report.failed.is_empty() && report.unreadable_records == 0 {
-            ExitCode::SUCCESS
-        } else {
-            ExitCode::from(EXIT_WITH_WARNINGS)
-        },
-    )
+    Ok(report)
 }
 
 /// The source to restore: the one that the person named, or the only one of the vault.
@@ -387,7 +444,12 @@ fn temporary_name() -> String {
     )
 }
 
-fn restore_item(open: &OpenVault, root: &Path, record: &ItemRecord) -> Result<Done, Reason> {
+fn restore_item(
+    open: &OpenVault,
+    root: &Path,
+    record: &ItemRecord,
+    written: &mut dyn FnMut(u64),
+) -> Result<Done, Reason> {
     let relative = safe_relative(&record.native_id)?;
     let target = root.join(&relative);
     let folder = prepare_parents(root, &relative)?;
@@ -397,7 +459,7 @@ fn restore_item(open: &OpenVault, root: &Path, record: &ItemRecord) -> Result<Do
     }
 
     let temporary = folder.join(temporary_name());
-    let result = write_verified(open, &temporary, record);
+    let result = write_verified(open, &temporary, record, written);
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
         return result.map(|()| Done::Restored);
@@ -424,7 +486,12 @@ fn restore_item(open: &OpenVault, root: &Path, record: &ItemRecord) -> Result<Do
 /// Writes the content of an item to a new file and checks it: the reader checks every chunk
 /// and the whole content, and the size must be the size of the record. The time and the
 /// permission bits are set before the file gets its name.
-fn write_verified(open: &OpenVault, path: &Path, record: &ItemRecord) -> Result<(), Reason> {
+fn write_verified(
+    open: &OpenVault,
+    path: &Path,
+    record: &ItemRecord,
+    progress: &mut dyn FnMut(u64),
+) -> Result<(), Reason> {
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -434,6 +501,7 @@ fn write_verified(open: &OpenVault, path: &Path, record: &ItemRecord) -> Result<
     for content in &record.content {
         let result = block_on(open.vault.read_content(&open.index, content, |chunk| {
             written += chunk.len() as u64;
+            progress(written);
             file.write_all(chunk)
         }));
         match result {

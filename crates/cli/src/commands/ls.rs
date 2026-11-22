@@ -10,6 +10,8 @@ use crate::display::{size, time};
 use crate::environment::Environment;
 use crate::error::CliError;
 use crate::exec::block_on;
+use crate::phrase::read_seed;
+use crate::progress::{Reporter, Status, with_reporter};
 use nilperit_format::SourceId;
 use nilperit_reader::{Snapshots, Vault};
 use nilperit_target_fs::FsTarget;
@@ -26,33 +28,56 @@ pub fn run(
     env: &Environment,
     stdin: &mut dyn BufRead,
     out: &mut dyn Write,
-    err: &mut dyn Write,
+    err: &mut (dyn Write + Send),
 ) -> Result<ExitCode, CliError> {
     // Check the arguments before the person types the phrase.
     let by_id = args.source_id.as_deref().map(parse_source_id).transpose()?;
 
-    let OpenVault {
-        seed,
-        vault,
-        index,
-        snapshots,
-    } = open_vault(&args.vault, args.phrase.phrase_file.as_deref(), env, stdin)?;
-    let mut warnings = Warnings {
-        packs: index.skipped().len(),
-        snapshots: snapshots.skipped().len(),
-        unreadable: 0,
-    };
+    let seed = read_seed(args.phrase.phrase_file.as_deref(), env, stdin)?;
+    // The list is made while the reporter shows the progress, and written when it is gone, so
+    // that no line of progress is between the rows.
+    let (listing, warnings) = with_reporter(err, env.progress, |reporter| {
+        let OpenVault {
+            seed,
+            vault,
+            index,
+            snapshots,
+        } = open_vault(&args.vault, seed, reporter)?;
+        let mut warnings = Warnings {
+            packs: index.skipped().len(),
+            snapshots: snapshots.skipped().len(),
+            unreadable: 0,
+        };
 
-    let selected = match (&args.name, by_id) {
-        (Some(name), _) => {
-            Some(source_id(&Credential::from_seed(&seed), name).ok_or(CliError::EmptyName)?)
+        let selected = match (&args.name, by_id) {
+            (Some(name), _) => {
+                Some(source_id(&Credential::from_seed(&seed), name).ok_or(CliError::EmptyName)?)
+            }
+            (None, id) => id,
+        };
+        let mut listing = Vec::new();
+        match selected {
+            None => sources(
+                &mut listing,
+                &vault,
+                &index,
+                &snapshots,
+                &mut warnings,
+                reporter,
+            )?,
+            Some(source) => items(
+                &mut listing,
+                &vault,
+                &index,
+                &snapshots,
+                &source,
+                &mut warnings,
+                reporter,
+            )?,
         }
-        (None, id) => id,
-    };
-    match selected {
-        None => sources(out, &vault, &index, &snapshots, &mut warnings)?,
-        Some(source) => items(out, &vault, &index, &snapshots, &source, &mut warnings)?,
-    }
+        Ok::<_, CliError>((listing, warnings))
+    })?;
+    out.write_all(&listing)?;
     out.flush()?;
     warnings.show(err)?;
     Ok(if warnings.any() {
@@ -119,6 +144,7 @@ fn sources(
     index: &nilperit_reader::PackIndex,
     snapshots: &Snapshots,
     warnings: &mut Warnings,
+    reporter: &Reporter<'_, '_>,
 ) -> Result<(), CliError> {
     let ids = snapshots.sources();
     if ids.is_empty() {
@@ -126,7 +152,12 @@ fn sources(
         return Ok(());
     }
     writeln!(out, "Sources in the vault ({}). Times are UTC.", ids.len())?;
-    for id in &ids {
+    for (done, id) in ids.iter().enumerate() {
+        reporter.report(Status::items(
+            "Reading the sources",
+            done as u64,
+            ids.len() as u64,
+        ));
         let Some(head) = snapshots.head(id) else {
             continue;
         };
@@ -162,13 +193,17 @@ fn items(
     snapshots: &Snapshots,
     source: &SourceId,
     warnings: &mut Warnings,
+    reporter: &Reporter<'_, '_>,
 ) -> Result<(), CliError> {
     let head = snapshots.head(source).ok_or(CliError::NoSuchSource)?;
+    reporter.report(Status::step("Reading the journal"));
     let state = block_on(vault.replay_journal(index, head)).map_err(CliError::Journal)?;
 
     // The native ID is bytes and has no order of text. Sort by it.
     let mut rows: Vec<(Vec<u8>, String)> = Vec::new();
-    for (key, item) in &state.items {
+    let total = state.items.len() as u64;
+    for (done, (key, item)) in state.items.iter().enumerate() {
+        reporter.report(Status::items("Reading the items", done as u64, total));
         match block_on(vault.read_item(index, key, item)) {
             Ok(record) => rows.push((
                 record.native_id,

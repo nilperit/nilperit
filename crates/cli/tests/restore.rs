@@ -104,6 +104,7 @@ impl Connector for Items {
                     modified: Some(1_700_000_000_000),
                     created: None,
                     media_type: None,
+                    size: None,
                     metadata: None,
                     contents: vec![Box::new(move || {
                         Ok(Box::new(Cursor::new(data)) as Box<dyn std::io::Read>)
