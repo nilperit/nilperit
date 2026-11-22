@@ -17,7 +17,7 @@ no_io_crates=(nilperit-format nilperit-crypto nilperit-reader)
 # Crates that must never reach the writer side.
 reader_side_crates=(nilperit-format nilperit-crypto nilperit-reader nilperit-recover nilperit-wasm)
 
-forbidden_upward='^nilperit-(writer|node|cli|connector-.*)$'
+forbidden_upward='^nilperit-(writer|node|cli|connector-.*|target-.*)$'
 forbidden_io='^(tokio|async-std|smol|reqwest|hyper|ureq|isahc|surf|curl|oauth2|openidconnect|yup-oauth2)$'
 
 workspace_packages=$(cargo metadata --format-version 1 --no-deps --locked |

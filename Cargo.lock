@@ -338,6 +338,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nilperit-target-fs"
+version = "0.0.0"
+dependencies = [
+ "nilperit-crypto",
+ "nilperit-format",
+ "nilperit-reader",
+ "nilperit-writer",
+ "x-wing",
+]
+
+[[package]]
 name = "nilperit-writer"
 version = "0.0.0"
 dependencies = [
