@@ -29,6 +29,8 @@ allow = [
   "Zlib",
   "CC0-1.0",
   "Unicode-3.0",
+  # Permissive, no copyleft. Used by minicbor.
+  "BlueOak-1.0.0",
 ]
 confidence-threshold = 0.9
 # Not every allowed license is in use yet; do not warn about that.

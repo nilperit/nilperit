@@ -98,7 +98,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 4.3. Maps use small unsigned integers as keys. The schema dictionary gives the name and the meaning of each key.
 
-4.4. Each object starts with an envelope:
+4.4. Each object is one envelope:
 
 | Field | Meaning |
 |---|---|
@@ -106,9 +106,17 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | schema | Schema version of this object type |
 | body | The object fields |
 
+4.4.1. The envelope is a CBOR map with the keys 0 (type), 1 (schema), and 2 (body). The body is a CBOR map with unsigned integer keys. The envelope contains the body as a CBOR item. It does not wrap the body in a byte string.
+
+4.4.2. The stored bytes of an object are the encoded envelope. See 4.9.
+
 4.5. A decoder MUST ignore map keys that it does not know. This lets a later schema version add fields.
 
 4.6. The schema dictionary is in CDDL (RFC 8610). It lists each object type, each schema version, and each field: number, name, type, and description.
+
+4.6.1. **Allowed CBOR items.** An object MUST contain only these CBOR items: unsigned integers, negative integers, byte strings, text strings, arrays, maps, false, true, and null. A decoder MUST reject tags, floating-point numbers, and other simple values. TBD: a later schema version can allow more item types.
+
+4.6.2. **Strict decoding.** A decoder MUST reject stored bytes that are not deterministic CBOR. This includes: an integer or length that is not in the shortest form; an indefinite-length item; a map with duplicate keys or keys that are not in the order of RFC 8949, section 4.2.1; a text string that is not valid UTF-8; and bytes after the end of the object. Two different byte strings therefore cannot give the same object. A decoder MUST limit the nesting depth. The limit of this draft is 32.
 
 4.7. **Object IDs.** The ID of each object is the keyed BLAKE3 hash of its plaintext encoding. The key is the dedup key. The hash input starts with the object type ID (domain separation). Length: 32 bytes. TBD: exact framing of the type ID.
 
