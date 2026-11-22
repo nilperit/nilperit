@@ -147,7 +147,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.3.9.1. A reader that has the recovery phrase MUST derive the public part of the read key and compare it with the value in the vault config. When they are different, the reader MUST stop and report a changed vault config. This protects against a replica that was changed.
 
-3.3.10. The lock file is plaintext and not authenticated. It contains only a node ID and a heartbeat time (see 8.6.1). A changed lock file can stop a node, but it cannot change data.
+3.3.10. The lock file is plaintext and not authenticated. It contains only a holder ID and a heartbeat time (see 8.6.1). A changed lock file can stop a node, but it cannot change data.
 
 3.3.11. The format MUST record an algorithm ID for each algorithm that it uses: encryption, key encapsulation, hashing, and compression. This lets a later version change algorithms. The object table records the compression algorithm of each object (see 6.3.1).
 
@@ -674,7 +674,7 @@ vault/
 
 | Key | Field | CBOR type | Meaning |
 |---|---|---|---|
-| 1 | node ID | Byte string, 16 bytes | The node that holds the lock. A node makes its node ID once, from random bytes. |
+| 1 | holder ID | Byte string, 16 bytes | Random bytes that the node makes each time that it takes the lock. They tell this holder from every other holder, also from another run of the same node. |
 | 2 | heartbeat | Integer | The time of the last heartbeat of the holder, by the clock of the holder (see 5.4.5.3) |
 
 8.6.2. **Taking.** A node takes the lock by creating the file, in one atomic step that fails when the file exists. When the file exists, the node reads it, and then:
@@ -683,9 +683,9 @@ vault/
 2. When the heartbeat is not older than the staleness limit, the node MUST NOT take the lock. The staleness limit is configurable. The node compares with its own clock.
 3. When the heartbeat is older, the node MAY take the lock. It deletes the file and creates it as above. When the creation fails, another node took the lock first, and the node stops.
 
-8.6.3. **Holding.** The holder writes the lock again with a new heartbeat at intervals that are shorter than the staleness limit, and before it writes the snapshot header of a commit (see 8.3). Before it writes, it reads the file. When the file is missing or names another node, the node has lost the lock. It MUST stop and MUST NOT write the snapshot header.
+8.6.3. **Holding.** The holder writes the lock again with a new heartbeat at intervals that are shorter than the staleness limit, and before it writes the snapshot header of a commit (see 8.3). Before it writes, it reads the file. When the file is missing or names another holder, the node has lost the lock. It MUST stop and MUST NOT write the snapshot header.
 
-8.6.4. **Releasing.** The holder deletes the file when the file names the holder. In any other case it does not delete the file.
+8.6.4. **Releasing.** The holder deletes the file when the file names its holder ID. In any other case it does not delete the file.
 
 8.6.5. The lock protects against two runs by mistake. It is not a strong lock. Two nodes can both write, for example when a holder pauses for longer than the staleness limit and then continues, when two clocks differ by more than the limit, or when two nodes take over the same stale lock at the same moment. The staleness limit SHOULD be much longer than the largest clock difference and the longest pause that a node expects. A fork (see 5.5.11) shows that it happened. No data is lost.
 
@@ -1000,10 +1000,10 @@ A.10.5. The file of the snapshot header (see 3.3.7.1): 24 bytes of `04` as the n
 
 ### A.11. Writer lock
 
-A.11.1. A lock file with the node ID of 16 bytes of `55` and the heartbeat 1700000002000 (29 bytes):
+A.11.1. A lock file with the holder ID of 16 bytes of `55` and the heartbeat 1700000002000 (29 bytes):
 
 ```
 a2015055555555555555555555555555555555021b0000018bcfe56fd0
 ```
 
-A.11.2. A reader MUST decode these bytes to that node ID and that heartbeat.
+A.11.2. A reader MUST decode these bytes to that holder ID and that heartbeat.

@@ -105,6 +105,9 @@ One kind of keyed hash: *object ID*, *item key*, or content hash. Each hash doma
 **Heartbeat**
 The time that the holder of the *writer lock* writes into the lock to show that it is alive. It is the time of the clock of the holder.
 
+**Holder ID**
+16 random bytes that a *node* makes each time that it takes the *writer lock*. They tell the holder from every other holder, also from another run of the same node.
+
 **Index**
 A *cache* that gives the location of each object: *pack*, offset, and *packed size*.
 
@@ -152,9 +155,6 @@ A running NilPerit process that gets data from *sources* and writes it to a *vau
 
 **Node credential**
 The set of keys that a *node* needs to write: the public part of the *read key*, the *dedup key*, and the *writer key*. With the node credential, a node can add data but cannot read stored *content*.
-
-**Node ID**
-16 random bytes that a *node* makes once. The *writer lock* names the node that holds it with its node ID.
 
 **Object**
 One encoded unit of data in a *vault*, for example a *chunk*, a *content object*, an *item record*, a *journal entry*, or a tree node. Each object has an *object ID*, an object type, and a *key class*.
@@ -268,4 +268,4 @@ The object that contains the format version, the vault ID, the public part of th
 A symmetric key that opens *objects* of *key class* W. The *node* uses it for objects that it must read again, for example *journal entries*, *content objects*, trees, and *object tables*.
 
 **Writer lock**
-The file `locks/writer` of a *vault*. A *node* must hold it to write. It contains the *node ID* of the holder and a *heartbeat*. A node can take a lock whose heartbeat is older than the staleness limit.
+The file `locks/writer` of a *vault*. A *node* must hold it to write. It contains the *holder ID* and a *heartbeat*. A node can take a lock whose heartbeat is older than the staleness limit.

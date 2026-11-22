@@ -4,7 +4,7 @@
 //! writes it back to exactly the same bytes.
 
 use nilperit_format::{
-    ChunkingProfile, DeltaEntry, ItemKey, ItemRecord, LockFile, NodeId, ObjectId, SnapshotHeader,
+    ChunkingProfile, DeltaEntry, HolderId, ItemKey, ItemRecord, LockFile, ObjectId, SnapshotHeader,
     SnapshotId, SourceId, Statistics, VaultConfig, VaultId, join_config_file, split_config_file,
 };
 
@@ -134,7 +134,7 @@ fn a10_snapshot_header() {
 fn a11_writer_lock() {
     let bytes = hex("a2015055555555555555555555555555555555021b0000018bcfe56fd0");
     let lock = LockFile::decode(&bytes).unwrap();
-    assert_eq!(lock.node_id, NodeId::from_bytes([0x55; 16]));
+    assert_eq!(lock.holder_id, HolderId::from_bytes([0x55; 16]));
     assert_eq!(lock.heartbeat, 1_700_000_002_000);
     assert_eq!(lock.encode(), bytes);
 }

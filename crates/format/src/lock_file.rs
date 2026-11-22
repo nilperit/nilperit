@@ -9,9 +9,9 @@ use crate::canonical;
 use crate::content_object::ObjectError;
 use crate::envelope::EnvelopeError;
 use crate::fields::{Fields, read_array, read_i64, write_bytes, write_i64, write_map};
-use crate::ids::NodeId;
+use crate::ids::HolderId;
 
-const KEY_NODE_ID: u64 = 1;
+const KEY_HOLDER_ID: u64 = 1;
 const KEY_HEARTBEAT: u64 = 2;
 
 /// The largest lock file that a reader accepts, in bytes.
@@ -20,8 +20,8 @@ pub const MAX_LOCK_FILE_SIZE: usize = 1024;
 /// The content of the writer lock (format.md 8.6.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LockFile {
-    /// The node that holds the lock.
-    pub node_id: NodeId,
+    /// The holder of the lock.
+    pub holder_id: HolderId,
     /// The time of the last heartbeat of the holder, by its clock, in milliseconds
     /// (format.md 5.4.5.3).
     pub heartbeat: i64,
@@ -31,7 +31,7 @@ impl LockFile {
     /// Encodes the lock file.
     pub fn encode(&self) -> Vec<u8> {
         write_map(&[
-            (KEY_NODE_ID, write_bytes(self.node_id.as_bytes())),
+            (KEY_HOLDER_ID, write_bytes(self.holder_id.as_bytes())),
             (KEY_HEARTBEAT, write_i64(self.heartbeat)),
         ])
     }
@@ -45,7 +45,10 @@ impl LockFile {
             .map_err(|e| ObjectError::Envelope(EnvelopeError::NotCanonical(e)))?;
         let fields = Fields::of_map(bytes, 0)?;
         Ok(Self {
-            node_id: NodeId::from_bytes(read_array(fields.require(KEY_NODE_ID)?, KEY_NODE_ID)?),
+            holder_id: HolderId::from_bytes(read_array(
+                fields.require(KEY_HOLDER_ID)?,
+                KEY_HOLDER_ID,
+            )?),
             heartbeat: read_i64(fields.require(KEY_HEARTBEAT)?, KEY_HEARTBEAT)?,
         })
     }
@@ -59,7 +62,7 @@ mod tests {
 
     fn lock() -> LockFile {
         LockFile {
-            node_id: NodeId::from_bytes([0x55; 16]),
+            holder_id: HolderId::from_bytes([0x55; 16]),
             heartbeat: 1_700_000_002_000,
         }
     }
@@ -78,7 +81,7 @@ mod tests {
     #[test]
     fn ignores_unknown_keys() {
         let bytes = write_map(&[
-            (KEY_NODE_ID, write_bytes(&[0x55; 16])),
+            (KEY_HOLDER_ID, write_bytes(&[0x55; 16])),
             (KEY_HEARTBEAT, write_i64(5)),
             (9, write_bytes(b"future")),
         ]);
@@ -100,14 +103,14 @@ mod tests {
         }
         // A field is missing, or has the wrong type or size.
         for fields in [
-            vec![(KEY_NODE_ID, write_bytes(&[0x55; 16]))],
+            vec![(KEY_HOLDER_ID, write_bytes(&[0x55; 16]))],
             vec![(KEY_HEARTBEAT, write_i64(5))],
             vec![
-                (KEY_NODE_ID, write_bytes(&[0x55; 15])),
+                (KEY_HOLDER_ID, write_bytes(&[0x55; 15])),
                 (KEY_HEARTBEAT, write_i64(5)),
             ],
             vec![
-                (KEY_NODE_ID, write_bytes(&[0x55; 16])),
+                (KEY_HOLDER_ID, write_bytes(&[0x55; 16])),
                 (KEY_HEARTBEAT, write_bytes(b"5")),
             ],
         ] {

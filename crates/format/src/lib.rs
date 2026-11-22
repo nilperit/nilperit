@@ -28,8 +28,8 @@ pub use content_object::{ContentObject, ObjectError};
 pub use delta_entry::{Change, DeltaEntry};
 pub use envelope::{Envelope, EnvelopeError};
 pub use ids::{
-    ContentHash, HASH_LEN, ItemKey, NodeId, ObjectId, PackName, SHORT_ID_LEN, SnapshotId, SourceId,
-    VaultId,
+    ContentHash, HASH_LEN, HolderId, ItemKey, ObjectId, PackName, SHORT_ID_LEN, SnapshotId,
+    SourceId, VaultId,
 };
 pub use item_record::ItemRecord;
 pub use lock_file::LockFile;

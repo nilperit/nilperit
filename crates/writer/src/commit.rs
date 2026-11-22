@@ -108,8 +108,8 @@ mod tests {
     use nilperit_crypto::RootSeed;
     use nilperit_format::object_type::{CHUNK, CONTENT_OBJECT, DELTA_ENTRY, ITEM_RECORD};
     use nilperit_format::{
-        Change, ContentHash, ContentObject, DeltaEntry, ItemKey, ItemRecord, NodeId, ObjectId,
-        SnapshotId, SourceId, VaultEssentials,
+        Change, ContentHash, ContentObject, DeltaEntry, ItemKey, ItemRecord, ObjectId, SnapshotId,
+        SourceId, VaultEssentials,
     };
     use nilperit_reader::{MemoryTarget, Target, Vault};
 
@@ -118,12 +118,17 @@ mod tests {
     }
 
     const SOURCE: SourceId = SourceId::from_bytes([1; 16]);
-    const NODE: NodeId = NodeId::from_bytes([0x41; 16]);
     const NOW: i64 = 1_700_000_000_000;
     const STALE: i64 = 600_000;
 
     fn lock<T: WriteTarget>(target: &T) -> WriterLock<'_, T> {
-        block_on(WriterLock::acquire(target, NODE, NOW, STALE)).unwrap()
+        block_on(WriterLock::acquire(
+            target,
+            NOW,
+            STALE,
+            &mut TestRng::new(77),
+        ))
+        .unwrap()
     }
 
     /// One commit of a tiny sync: writes the files as items and commits.
@@ -428,7 +433,13 @@ mod tests {
         // The failed run did not release the lock. The next run starts after the
         // staleness limit and takes it over.
         let later = NOW + STALE + 1;
-        let held = block_on(WriterLock::acquire(&target, NODE, later, STALE)).unwrap();
+        let held = block_on(WriterLock::acquire(
+            &target,
+            later,
+            STALE,
+            &mut TestRng::new(78),
+        ))
+        .unwrap();
         block_on(commit(
             &held,
             &credential,
@@ -456,9 +467,14 @@ mod tests {
 
         // This node pauses. Another node takes over the stale lock.
         let held = lock(&target);
-        let other = NodeId::from_bytes([0x42; 16]);
         let later = NOW + STALE + 1;
-        let _taken = block_on(WriterLock::acquire(&target, other, later, STALE)).unwrap();
+        let _taken = block_on(WriterLock::acquire(
+            &target,
+            later,
+            STALE,
+            &mut TestRng::new(79),
+        ))
+        .unwrap();
 
         let result = block_on(commit(
             &held,
@@ -499,7 +515,7 @@ mod tests {
         ))
         .unwrap();
         let file = LockFile::decode(&block_on(target.read(LOCK_PATH)).unwrap()).unwrap();
-        assert_eq!(file.node_id, NODE);
+        assert_eq!(file.holder_id, held.holder_id());
         assert_eq!(file.heartbeat, NOW + 5_000);
     }
 }

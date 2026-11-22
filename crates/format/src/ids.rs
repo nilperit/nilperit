@@ -86,8 +86,9 @@ hash_type!(
 );
 
 hash_type!(
-    /// The ID of a node: 16 random bytes that the node makes once (format.md 8.6.1).
-    NodeId,
+    /// The ID of the holder of a writer lock: 16 random bytes that a node makes each
+    /// time that it takes the lock (format.md 8.6.1).
+    HolderId,
     SHORT_ID_LEN
 );
 

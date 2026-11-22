@@ -31,8 +31,12 @@ pub trait WriteTarget: Target {
     /// Deletes the writer lock file (format.md 8.6.4). It is not an error when the
     /// file does not exist.
     ///
-    /// This is the only delete in the trait. No code path removes stored data
-    /// except retention (ADR 0010), which will need its own operation.
+    /// This is the only delete in the trait, and it can name only the lock file. A
+    /// writer cannot delete a pack or a snapshot header through the trait by
+    /// mistake. Removing stored data is retention (ADR 0010) and will need its own
+    /// operation. This method does not check whose lock it deletes:
+    /// `WriterLock::release` checks, and the takeover of a stale lock (format.md
+    /// 8.6.2) deletes the lock of another holder on purpose.
     async fn remove_lock(&self) -> Result<(), TargetError>;
 }
 
