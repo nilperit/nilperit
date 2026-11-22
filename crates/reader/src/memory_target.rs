@@ -4,12 +4,17 @@ use crate::target::{Target, TargetError};
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use core::cell::RefCell;
 use core::ops::Range;
 
 /// A vault that lives in memory. It is a map from path to file bytes.
+///
+/// Files can change through a shared reference, like the files of a real target,
+/// so that a reader and a writer can use the same target at the same time. It is
+/// not `Sync`.
 #[derive(Debug, Default, Clone)]
 pub struct MemoryTarget {
-    files: BTreeMap<String, Vec<u8>>,
+    files: RefCell<BTreeMap<String, Vec<u8>>>,
 }
 
 impl MemoryTarget {
@@ -19,27 +24,26 @@ impl MemoryTarget {
     }
 
     /// Sets the bytes of a file. It replaces a file with the same path.
-    pub fn insert(&mut self, path: &str, bytes: Vec<u8>) {
-        self.files.insert(path.to_string(), bytes);
+    pub fn insert(&self, path: &str, bytes: Vec<u8>) {
+        self.files.borrow_mut().insert(path.to_string(), bytes);
     }
 
     /// Removes a file. It returns whether the file existed.
-    pub fn remove(&mut self, path: &str) -> bool {
-        self.files.remove(path).is_some()
-    }
-
-    fn file(&self, path: &str) -> Result<&Vec<u8>, TargetError> {
-        self.files.get(path).ok_or(TargetError::NotFound)
+    pub fn remove(&self, path: &str) -> bool {
+        self.files.borrow_mut().remove(path).is_some()
     }
 }
 
 impl Target for MemoryTarget {
     async fn len(&self, path: &str) -> Result<u64, TargetError> {
-        Ok(self.file(path)?.len() as u64)
+        let files = self.files.borrow();
+        let file = files.get(path).ok_or(TargetError::NotFound)?;
+        Ok(file.len() as u64)
     }
 
     async fn read_range(&self, path: &str, range: Range<u64>) -> Result<Vec<u8>, TargetError> {
-        let file = self.file(path)?;
+        let files = self.files.borrow();
+        let file = files.get(path).ok_or(TargetError::NotFound)?;
         let start = usize::try_from(range.start).map_err(|_| TargetError::OutOfRange)?;
         let end = usize::try_from(range.end).map_err(|_| TargetError::OutOfRange)?;
         file.get(start..end)
@@ -48,13 +52,15 @@ impl Target for MemoryTarget {
     }
 
     async fn read(&self, path: &str) -> Result<Vec<u8>, TargetError> {
-        self.file(path).cloned()
+        let files = self.files.borrow();
+        files.get(path).cloned().ok_or(TargetError::NotFound)
     }
 
     async fn list(&self, dir: &str) -> Result<Vec<String>, TargetError> {
         let prefix = alloc::format!("{dir}/");
         Ok(self
             .files
+            .borrow()
             .keys()
             .filter(|path| path.starts_with(&prefix))
             .cloned()
@@ -69,7 +75,7 @@ mod tests {
     use alloc::vec;
 
     fn sample() -> MemoryTarget {
-        let mut target = MemoryTarget::new();
+        let target = MemoryTarget::new();
         target.insert("config-a", vec![1, 2, 3, 4]);
         target.insert("packs/ab/abcd", vec![9; 10]);
         target.insert("packs/cd/cdef", vec![8; 5]);

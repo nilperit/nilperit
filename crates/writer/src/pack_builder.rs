@@ -59,6 +59,8 @@ impl From<PackError> for BuildError {
 pub struct BuiltPack {
     /// The name of the pack: the BLAKE3 hash of `bytes` (format.md 6.4).
     pub name: PackName,
+    /// The class of the pack (format.md 6.2). A commit writes data packs first.
+    pub class: PackClass,
     /// The bytes of the whole pack file.
     pub bytes: Vec<u8>,
     /// The objects in the pack, in the order of the body, with their types.
@@ -234,6 +236,7 @@ impl<'a> PackBuilder<'a> {
         let name = PackName::from_bytes(*blake3::hash(&bytes).as_bytes());
         Ok(BuiltPack {
             name,
+            class: self.class,
             bytes,
             objects,
         })
@@ -243,84 +246,11 @@ impl<'a> PackBuilder<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::{TestRng, block_on, unhex};
     use nilperit_crypto::{DedupKey, RootSeed, WriterKey};
     use nilperit_format::object_type::{CHUNK, CONTENT_OBJECT, DELTA_ENTRY, ITEM_RECORD};
     use nilperit_reader::layout::pack_path;
     use nilperit_reader::{Keys, MemoryTarget, ObjectReadError, Pack};
-    use std::convert::Infallible;
-    use std::future::Future;
-    use std::pin::pin;
-    use std::task::{Context, Poll, Waker};
-    use x_wing::kem::common::rand_core::{TryCryptoRng, TryRng};
-
-    /// Runs a future that never waits for anything (the in-memory target).
-    fn block_on<F: Future>(future: F) -> F::Output {
-        let mut future = pin!(future);
-        match future
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-        {
-            Poll::Ready(value) => value,
-            Poll::Pending => panic!("the future waits"),
-        }
-    }
-
-    /// A "random" number generator: first the bytes of a script, then SplitMix64.
-    /// NOT secure: only for tests.
-    struct TestRng {
-        script: Vec<u8>,
-        state: u64,
-    }
-
-    impl TestRng {
-        fn new(seed: u64) -> Self {
-            Self {
-                script: Vec::new(),
-                state: seed,
-            }
-        }
-
-        fn scripted(script: Vec<u8>) -> Self {
-            Self { script, state: 1 }
-        }
-
-        fn step(&mut self) -> u64 {
-            self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
-            let mut z = self.state;
-            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-            z ^ (z >> 31)
-        }
-    }
-
-    impl TryRng for TestRng {
-        type Error = Infallible;
-        fn try_next_u32(&mut self) -> Result<u32, Infallible> {
-            Ok((self.step() >> 32) as u32)
-        }
-        fn try_next_u64(&mut self) -> Result<u64, Infallible> {
-            Ok(self.step())
-        }
-        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Infallible> {
-            for byte in dst {
-                *byte = if self.script.is_empty() {
-                    self.step() as u8
-                } else {
-                    self.script.remove(0)
-                };
-            }
-            Ok(())
-        }
-    }
-
-    impl TryCryptoRng for TestRng {}
-
-    fn unhex(s: &str) -> Vec<u8> {
-        (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect()
-    }
 
     fn seed() -> RootSeed {
         RootSeed::from_bytes([7; 32])
@@ -329,7 +259,7 @@ mod tests {
     /// Opens a built pack with the reader and returns what the reader needs.
     fn open(pack: &BuiltPack) -> (MemoryTarget, Pack, Keys) {
         let seed = seed();
-        let mut target = MemoryTarget::new();
+        let target = MemoryTarget::new();
         target.insert(&pack_path(&pack.name), pack.bytes.clone());
         let opened =
             block_on(Pack::open(&target, pack.name, &seed.writer_key())).expect("the pack opens");

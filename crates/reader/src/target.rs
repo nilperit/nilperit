@@ -58,3 +58,23 @@ pub trait Target {
     /// A directory that does not exist has no files.
     async fn list(&self, dir: &str) -> Result<Vec<String>, TargetError>;
 }
+
+/// A shared reference to a target is a target. A reader and a writer can then use
+/// the same target.
+impl<T: Target + ?Sized> Target for &T {
+    async fn len(&self, path: &str) -> Result<u64, TargetError> {
+        (**self).len(path).await
+    }
+
+    async fn read_range(&self, path: &str, range: Range<u64>) -> Result<Vec<u8>, TargetError> {
+        (**self).read_range(path, range).await
+    }
+
+    async fn read(&self, path: &str) -> Result<Vec<u8>, TargetError> {
+        (**self).read(path).await
+    }
+
+    async fn list(&self, dir: &str) -> Result<Vec<String>, TargetError> {
+        (**self).list(dir).await
+    }
+}

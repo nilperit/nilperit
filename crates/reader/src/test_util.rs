@@ -258,7 +258,7 @@ pub fn vault_with(
     files: &[(alloc::string::String, Vec<u8>)],
 ) -> crate::Vault<crate::MemoryTarget> {
     let seed = test_seed();
-    let mut target = crate::MemoryTarget::new();
+    let target = crate::MemoryTarget::new();
     target.insert(
         crate::layout::CONFIG_A,
         file_with_key(&config(&seed, 1, 1), &seed),

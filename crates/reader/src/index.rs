@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn ignores_files_that_are_not_packs() {
         let (a, _) = pack(&[chunk(b"one")]);
-        let mut target = MemoryTarget::new();
+        let target = MemoryTarget::new();
         target.insert(
             CONFIG_A,
             file_with_key(&config(&test_seed(), 1, 1), &test_seed()),

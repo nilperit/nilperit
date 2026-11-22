@@ -183,7 +183,7 @@ mod tests {
     }
 
     fn target(a: Option<Vec<u8>>, b: Option<Vec<u8>>) -> MemoryTarget {
-        let mut target = MemoryTarget::new();
+        let target = MemoryTarget::new();
         if let Some(a) = a {
             target.insert(CONFIG_A, a);
         }
