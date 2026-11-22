@@ -301,6 +301,11 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
                     session.pending.push(prepared.change);
                 }
             },
+            // The item is gone from the source. It is dropped: with a complete list
+            // it is not in `seen`, so it counts as deleted when the vault had it.
+            Err(io::ErrorKind::NotFound) => {
+                seen.remove(&key);
+            }
             // An item that cannot be read stays as it is in the vault: it is not
             // deleted.
             Err(kind) => session.report.failed.push(FailedItem { native_id, kind }),
@@ -882,6 +887,57 @@ mod tests {
                 ("plain".to_string(), b"p changed".to_vec()),
             ]
         );
+    }
+
+    #[test]
+    fn an_item_that_is_gone_when_it_is_read_is_dropped_and_deleted() {
+        let (target, credential, source) = setup();
+        run_default(
+            &target,
+            &credential,
+            source,
+            &mut ListConnector::new(&[("stays", b"s"), ("goes", b"g")]),
+        );
+        // The source listed `goes`, but the file was deleted before it was read. A
+        // file that the vault never had is dropped in the same way.
+        let mut connector = ListConnector::new(&[("stays", b"s")]);
+        connector
+            .items
+            .push(("goes".into(), Err(io::ErrorKind::NotFound)));
+        connector
+            .items
+            .push(("never-had".into(), Err(io::ErrorKind::NotFound)));
+        let report = run_default(&target, &credential, source, &mut connector);
+        assert!(report.failed.is_empty(), "{:?}", report.failed);
+        assert_eq!(
+            (
+                report.items_deleted,
+                report.items_unchanged,
+                report.items_new
+            ),
+            (1, 1, 0)
+        );
+        let state = read_state(&target, &seed(), &source).unwrap();
+        assert_eq!(state.files, [("stays".to_string(), b"s".to_vec())]);
+    }
+
+    #[test]
+    fn an_item_that_is_gone_does_not_delete_with_a_list_that_is_not_complete() {
+        // The connector names the deletions itself when the list is not complete.
+        let (target, credential, source) = setup();
+        let mut connector = ListConnector::new(&[("a", b"a")]);
+        connector.cursor = Some(vec![1]);
+        run_default(&target, &credential, source, &mut connector);
+        let mut connector = ListConnector::new(&[]);
+        connector.complete = false;
+        connector
+            .items
+            .push(("a".into(), Err(io::ErrorKind::NotFound)));
+        connector.cursor = Some(vec![2]);
+        let report = run_default(&target, &credential, source, &mut connector);
+        assert_eq!((report.items_deleted, report.failed.len()), (0, 0));
+        let state = read_state(&target, &seed(), &source).unwrap();
+        assert_eq!(state.files.len(), 1);
     }
 
     #[test]

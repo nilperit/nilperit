@@ -1,7 +1,7 @@
 //! A folder goes into a vault on disk and comes back out. The source, the vault and
 //! the restore are all real folders. This is the first working system, in a test.
 
-use nilperit_connector_fs::FolderConnector;
+use nilperit_connector_fs::{FolderConnector, Symlinks};
 use nilperit_crypto::RootSeed;
 use nilperit_format::SourceId;
 use nilperit_reader::Vault;
@@ -349,4 +349,107 @@ fn a_name_that_is_not_text_comes_back_with_the_same_bytes() {
         restored.keys().next().unwrap().as_slice(),
         &[b'o', b'd', b'd', 0xff, 0xfe]
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn links_to_files_stored_elsewhere_are_backed_up_when_the_connector_follows_them() {
+    let source = TempDir::new("source6");
+    let elsewhere = TempDir::new("elsewhere6");
+    let vault = TempDir::new("vault6");
+    write(&elsewhere.0, "Documents/contract.pdf", b"important");
+    write(&elsewhere.0, "Documents/notes/todo.txt", b"todo");
+    write(&source.0, "plain.txt", b"plain");
+    std::os::unix::fs::symlink(elsewhere.0.join("Documents"), source.0.join("Documents")).unwrap();
+    std::os::unix::fs::symlink(
+        elsewhere.0.join("Documents/contract.pdf"),
+        source.0.join("contract"),
+    )
+    .unwrap();
+
+    let mut setup = Setup::new(&vault.0);
+    // By default the links are reported, and not stored.
+    let report = setup.sync(&mut FolderConnector::new(&source.0), NOW);
+    assert_eq!(report.items_new, 1);
+    assert_eq!(report.failed.len(), 2);
+
+    // With the option, the files that the links point to are in the vault, under the
+    // paths of the links. The first run did not store the links, so nothing is lost.
+    let mut follow = FolderConnector::new(&source.0).symlinks(Symlinks::Follow);
+    let report = setup.sync(&mut follow, NOW + 1_000);
+    assert_eq!((report.items_new, report.items_unchanged), (3, 1));
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+    let restored = setup.read_all();
+    let names: Vec<&[u8]> = restored.keys().map(Vec::as_slice).collect();
+    assert_eq!(
+        names,
+        [
+            &b"Documents/contract.pdf"[..],
+            b"Documents/notes/todo.txt",
+            b"contract",
+            b"plain.txt"
+        ]
+    );
+    assert_eq!(restored[&b"contract"[..]].0, b"important");
+    // The same bytes under two paths are stored once.
+    assert_eq!(report.chunks_written, 2);
+
+    // The disk behind the links is not mounted: nothing is deleted from the vault.
+    fs::remove_dir_all(&elsewhere.0).unwrap();
+    let report = setup.sync(
+        &mut FolderConnector::new(&source.0).symlinks(Symlinks::Follow),
+        NOW + 2_000,
+    );
+    assert_eq!(report.items_deleted, 0);
+    assert_eq!(report.failed.len(), 2);
+    assert_eq!(setup.read_all().len(), 4);
+}
+
+#[test]
+fn a_file_that_goes_while_the_run_reads_it_counts_as_deleted() {
+    use nilperit_writer::{Changes, Connector, ConnectorError};
+
+    // A source that lists a file that is gone when the engine reads it.
+    struct Racing(FolderConnector, PathBuf);
+    impl Connector for Racing {
+        async fn changes(&mut self, cursor: Option<&[u8]>) -> Result<Changes, ConnectorError> {
+            let changes = self.0.changes(cursor).await;
+            fs::remove_file(&self.1).unwrap();
+            changes
+        }
+    }
+
+    let source = TempDir::new("source7");
+    let vault = TempDir::new("vault7");
+    write(&source.0, "stays", b"stays");
+    write(&source.0, "goes", b"goes");
+    let mut setup = Setup::new(&vault.0);
+    setup.sync(&mut FolderConnector::new(&source.0), NOW);
+    assert_eq!(setup.read_all().len(), 2);
+
+    // The file is deleted after the walk, before it is read.
+    let mut racing = Racing(FolderConnector::new(&source.0), source.0.join("goes"));
+    let lock = block_on(WriterLock::acquire(
+        &setup.target,
+        NOW + 1_000,
+        STALE,
+        &mut setup.rng,
+    ))
+    .unwrap();
+    let report = block_on(sync(
+        &lock,
+        &setup.credential,
+        setup.source,
+        &mut racing,
+        &SyncOptions::default(),
+        || NOW + 1_000,
+        &mut setup.rng,
+    ))
+    .unwrap();
+    block_on(lock.release()).unwrap();
+    assert!(report.failed.is_empty(), "{:?}", report.failed);
+    assert_eq!((report.items_deleted, report.items_unchanged), (1, 1));
+    let restored = setup.read_all();
+    assert_eq!(restored.len(), 1);
+    assert!(restored.contains_key(&b"stays"[..]));
 }

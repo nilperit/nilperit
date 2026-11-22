@@ -9,6 +9,14 @@ use std::io::{self, Read};
 
 /// A way to open the content of an item. Nothing is read before the engine calls
 /// it, so a listing of a large source does not hold the content in memory.
+///
+/// The kind of the error matters. `io::ErrorKind::NotFound` (when the content is
+/// opened or read) says that the item no longer exists at the source, for example
+/// a file that was deleted after the listing. The engine then drops the item: it is
+/// not reported, and with a complete list it counts as deleted. Every other error
+/// says that the item exists and cannot be read now. The engine reports it, and the
+/// vault keeps the last version that it has, so a source that is not reachable for a
+/// moment (a disk that is not mounted) does not delete anything.
 pub type OpenContent = Box<dyn FnOnce() -> io::Result<Box<dyn Read>>>;
 
 /// One item of a source, as the connector reports it.

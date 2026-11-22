@@ -43,7 +43,7 @@ The plan for step 3:
 - **Connection secrets** of a source (later: OAuth tokens) stay in the local configuration of the node and never go into the vault (ADR 0004).
 - **Source identity.** A source ID is derived: a keyed hash of a source name, in a new hash domain `source-id`. The name is the canonical folder path, and `--name` overrides it, so that a moved folder can keep its journal. The command-line program then keeps no state. A small pull request before the sync engine adds the hash domain to format.md (3.2.5, 5.4.5.1) and to the crypto crate.
 - **Arguments.** `clap` with `default-features = false` and the features `std`, `help`, `usage`, `error-context` and `derive`. That adds 6 crates, and `syn`, `quote` and `proc-macro2` are in the tree already (through `curve25519-dalek-derive`). Without `derive` it would be 4. The default features (colors, suggestions) would add about 11, which we do not need. The same parser can stay in the lean recovery binary. Parsing lives in one module that returns a typed command.
-- **Commands.** `init <vault>`, `sync <folder> --vault <vault> [--name <name>]`, `ls --vault <vault>`, `restore --vault <vault> <destination>`.
+- **Commands.** `init <vault>`, `sync <folder> --vault <vault> [--name <name>] [--follow-symlinks]`, `ls --vault <vault>`, `restore --vault <vault> <destination>`.
 - **Output.** `sync` and `restore` print counts. `-v` adds file names. `ls` always shows names.
 - **`restore` is safe.** It never overwrites a file, and it rejects a native ID with `..`, an absolute path or an empty part, so that a damaged or hostile vault cannot write outside the destination.
 
