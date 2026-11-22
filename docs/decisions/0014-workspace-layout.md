@@ -34,6 +34,8 @@ Binaries:
 - `nilperit`: full CLI and node.
 - `nilperit-recover`: reader only (list, extract, verify, salvage).
 
+Until the split is made (see `docs/pre-v1.md`), the full `nilperit` binary is also what the `recovery/` folder of a vault ships. The split is a requirement before format version 1.
+
 ## Consequences
 
 - Because of the crate split, the reader-only binary and the browser module physically cannot contain writer or network code.

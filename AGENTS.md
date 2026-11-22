@@ -24,6 +24,7 @@ If the code and `format.md` disagree, stop and ask. Do not silently follow eithe
 - **Stable object IDs.** An object ID is a keyed hash of the stored plaintext bytes. Never decode and re-encode a stored object to hash or copy it (format.md §4.7–4.9).
 - **Damage stays local.** Never design a structure where one damaged file makes unrelated data unreadable.
 - **The write-only node.** Code that runs on a node must never require the private part of the read key (ADR 0004).
+- **No connection secrets in the vault.** OAuth tokens, API keys and passwords of a source stay on the node, and so does the node credential. Never write them to the vault in any key class (ADR 0004).
 - **Deterministic encoding.** Objects that are hashed must always encode to the same bytes (ADR 0006).
 - **Readers read every older format version.** Never break reading of an existing format version (ADR 0011).
 
@@ -61,7 +62,7 @@ nilperit-connector-*, nilperit-node
 
 - Rust stable, pinned in `rust-toolchain.toml`. Format with `cargo fmt`; `cargo clippy` must pass without warnings.
 - No `unsafe` unless there is no alternative; every `unsafe` block needs a `// SAFETY:` comment.
-- Never log, print or include in error messages: keys, the recovery phrase, plaintext content, item titles or file names.
+- Never log, print or include in error messages: keys, the recovery phrase or plaintext content. Never put item titles or file names in logs or in error values: they leave the machine in log files, mail and support bundles. The command-line program may show them as its direct output to the person at the terminal: always for `ls`, and with `-v` for `sync` and `restore`.
 - Use widely used, well-reviewed crypto crates (RustCrypto, `blake3`). Check the audit status of a crate before it handles key material, and record it in the pull request (current known status: `docs/decisions/0012-post-quantum-hybrid.md`). Never implement cryptographic primitives yourself.
 - Add tests with every change. For format code, add round-trip and test-vector tests.
 - Make a test vector with an implementation other than the one under test (for example a Python script), so that it checks the specification and not only the code. Check that the hex in `docs/format.md` is the hex that the tests use.
