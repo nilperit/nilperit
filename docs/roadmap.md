@@ -20,7 +20,7 @@ The order of work. Each step is its own pull request:
    - opening a pack: the footer, the trailer, the header, the seal, and the object table;
    - replaying the journal: snapshot headers, the head, and the delta entries;
    - reading the content of an item: item record, content object, chunks, decompression, and the check of every ID.
-2. **The writer** (`nilperit-writer`): the chunker, the pack builder, the commit procedure (temporary file, sync, rename, in the order of format.md section 8), the writer lock, and the trait that connectors implement.
+2. **The writer** (`nilperit-writer`): the chunker (fixed-size cutting only), the pack builder, the commit procedure (temporary file, sync, rename, in the order of format.md section 8), the writer lock, and the trait that connectors implement.
 3. **The local folder connector and the `nilperit` binary.** The file-system target lives in a small crate of its own, because the reader must stay free of runtimes and file-system code.
 
 ### What the first system leaves out on purpose
@@ -34,7 +34,6 @@ The order of work. Each step is its own pull request:
 
 ### Decisions that are still open
 
-- **The chunker's gear table.** The proposal is in pre-v1.md, under "Chunking".
 - **The crate for command-line arguments.** The preference is `clap` with a reduced set of features (about 12 crates in total). The alternative is a small parser without dependencies, such as `lexopt`, with hand-written help text. We decide when we write the binary.
 
 ## After the first working system

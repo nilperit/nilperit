@@ -59,7 +59,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | Read key | X-Wing key pair (X25519 + ML-KEM-768) | Owner (private part) | Opens item records and chunks |
 | Dedup key | 32-byte key | Node | Source of the domain keys (see 3.2.5) |
 | Writer key | 32-byte symmetric key | Node | Encrypts objects that the node reads again |
-| Chunker seed | 32 bytes | Node | Selects chunk cut points |
+| Chunker seed | 32 bytes | Node | Reserved for a content-defined chunking algorithm (see 5.2.4.2). The algorithm `fixed` does not use it. |
 
 3.2.4. The node credential is: the public part of the read key, the dedup key, the writer key, and the chunker seed. A node MUST NOT have the private part of the read key, unless the owner gives it explicitly.
 
@@ -212,7 +212,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 ### 5.1. Chunk (truth)
 
-5.1.1. NilPerit cuts content into chunks with FastCDC. The chunker seed sets the gear table.
+5.1.1. NilPerit cuts content into chunks with the algorithm of a chunking profile (see 5.2). This draft defines one algorithm: `fixed`.
 
 5.1.2. The chunk ID is the object ID of the chunk (see 4.7): the keyed BLAKE3 hash of the plaintext chunk. Size: 32 bytes.
 
@@ -236,13 +236,12 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 | ID | Name | Use | Algorithm | Minimum size | Average size | Maximum size |
 |---|---|---|---|---|---|---|
-| 1 | small | Data of at most 64 KiB. No cutting: one chunk. | `none` | 0 | 0 | 65536 |
-| 2 | default | Documents, email with attachments, general files | `fastcdc-2020` | 65536 | 262144 | 1048576 |
-| 3 | large | Video, photos, archives | `fastcdc-2020` | 524288 | 2097152 | 8388608 |
+| 1 | default | Documents, email, general files | `fixed` | 0 | 0 | 262144 |
+| 2 | large | Video, photos, archives | `fixed` | 0 | 0 | 2097152 |
 
-5.2.4.1. For the algorithm `none`, the minimum size and the average size are 0. The maximum size is the largest size of data that the profile takes as one chunk.
+5.2.4.1. **The algorithm `fixed`.** The content is cut into chunks of the same size, from the start to the end. The maximum size of the profile is the size of a chunk. The last chunk holds the rest and can be shorter. Content that is not larger than one chunk is one chunk. Content without data has no chunk (see 5.3.1.1). A profile with this algorithm MUST have the minimum size 0, the average size 0, and a maximum size above 0.
 
-5.2.4.2. TBD: the exact text of the algorithm `fastcdc-2020`, and the way the chunker seed makes its gear table.
+5.2.4.2. **Other algorithms.** The format can use other algorithms under other names. A reader does not need the chunking algorithm, because a content object lists its chunks. A content-defined algorithm, which cuts at places that depend on the content, can be added later as a new profile, for example when measurements show that it saves space for a connector (see pre-v1.md). The chunker seed (see 3.2.3) is reserved for such an algorithm. The algorithm `fixed` does not use it.
 
 ### 5.3. Content object (truth)
 
@@ -760,7 +759,6 @@ vault/
 The items below are not fixed in this draft:
 
 - ML-KEM implementation (3.3.2.1): RustCrypto `ml-kem` has never had an independent audit; `libcrux-ml-kem` (formally verified) is the main alternative. Also whether X-Wing is a final standard, and the name of the algorithm then.
-- The exact text of the chunking algorithm `fastcdc-2020` and the derivation of its gear table from the chunker seed (5.2.4.2).
 - Contents and names in recovery/ (7.3).
 - Parity data format (10.4).
 - Fields of a checkpoint other than the connector cursor and the two trees (5.5.3): for example its time, and whether it has a snapshot ID. A checkpoint that compaction writes (11.3.1) does not come from a synchronization.
@@ -930,17 +928,17 @@ A.9.3. The keys from the writer key of A.9.2 (see 3.3.3, 3.3.7, and 3.3.8):
 | Pack object key | `b51b12b1ff96580e7e9faf30f1eacfa111927612515cee94780e4d4fa8a81508` |
 | Pack table key | `ddc557fb4f9ce07ae8c74f25b59982ccad494a32786ac3eb27b83fbfa59834c0` |
 
-A.9.4. A vault config. The read public key is a placeholder of 32 bytes `00 01 ... 1f`, because the vector has no X-Wing implementation. A real read public key is 1216 bytes. The vault ID is 16 bytes of `11`. The config sequence is 1. The chunking profiles are the three profiles of 5.2.4.
+A.9.4. A vault config. The read public key is a placeholder of 32 bytes `00 01 ... 1f`, because the vector has no X-Wing implementation. A real read public key is 1216 bytes. The vault ID is 16 bytes of `11`. The config sequence is 1. The chunking profiles are the two profiles of 5.2.4.
 
 | Part | Value |
 |---|---|
-| The CBOR map (179 bytes) | `a80100020103501111111111111111111111111111111104727863686163686132302d706f6c79313330350566626c616b6533066f782d77696e672d64726166742d3036075820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f08838501646e6f6e6500001a0001000085026c666173746364632d323032301a000100001a000400001a0010000085036c666173746364632d323032301a000800001a002000001a00800000` |
-| The MAC (BLAKE3 keyed with the config MAC key, over the map) | `372fab368795b471732a8a118492fbc5f48c34ac333cf0d1548b47e19ae9c828` |
+| The CBOR map (135 bytes) | `a80100020103501111111111111111111111111111111104727863686163686132302d706f6c79313330350566626c616b6533066f782d77696e672d64726166742d3036075820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f0882850165666978656400001a00040000850265666978656400001a00200000` |
+| The MAC (BLAKE3 keyed with the config MAC key, over the map) | `30c8938f3fdf3772fc4c9cd43ab4e1369ba11213952739ad63557d7b79b9fc25` |
 
-A.9.5. The config file is the map followed by the MAC (211 bytes):
+A.9.5. The config file is the map followed by the MAC (167 bytes):
 
 ```
-a80100020103501111111111111111111111111111111104727863686163686132302d706f6c79313330350566626c616b6533066f782d77696e672d64726166742d3036075820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f08838501646e6f6e6500001a0001000085026c666173746364632d323032301a000100001a000400001a0010000085036c666173746364632d323032301a000800001a002000001a00800000372fab368795b471732a8a118492fbc5f48c34ac333cf0d1548b47e19ae9c828
+a80100020103501111111111111111111111111111111104727863686163686132302d706f6c79313330350566626c616b6533066f782d77696e672d64726166742d3036075820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f0882850165666978656400001a00040000850265666978656400001a0020000030c8938f3fdf3772fc4c9cd43ab4e1369ba11213952739ad63557d7b79b9fc25
 ```
 
 ### A.10. Item record, delta entry, and snapshot header

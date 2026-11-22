@@ -46,7 +46,7 @@ A part of the bytes of a *content*. NilPerit cuts content into chunks with conte
 The *object ID* of a *chunk*. Identical plaintext always gives the same chunk ID in the same *vault*.
 
 **Chunker seed**
-A secret value that the chunker uses to find cut points. NilPerit derives it from the *root seed*. It is fixed for the life of a *vault*.
+A secret value that NilPerit derives from the *root seed*. It is reserved for a chunking algorithm that cuts at places that depend on the content. The algorithm `fixed`, which is the only one so far, does not use it.
 
 **Chunking profile**
 A set of chunker settings: algorithm, minimum size, average size, and maximum size. The *vault config* contains a table of chunking profiles. Each *content object* records the profile that NilPerit used for it.
