@@ -6,7 +6,7 @@ This page explains what NilPerit stores, where it stores it, and how history bui
 
 ## The two questions to ask about any object
 
-Everything NilPerit stores is an **object**. For every object, two questions matter:
+Almost everything NilPerit stores is an **object**. The exceptions are the plaintext files of the vault: the config, the copy of the specification, the schema, the recovery software, and the lock file. For every object, two questions matter:
 
 1. **Is it truth or cache?**
    - **Truth** cannot be recreated. Losing it loses data.
@@ -77,9 +77,9 @@ vault/
 ```
 
 - The **plaintext** files contain no data of the owner. They exist so that a reader can find out what it is looking at before it has any keys, and so a vault can be read without NilPerit.
-- **Data packs** hold the truth. An item record sits in the same data pack as its chunks, so a damaged pack only affects the items inside it.
+- **Data packs** hold the truth. An item record usually sits in the same data pack as its chunks, so a damaged pack only affects the items inside it.
 - **Metadata packs** hold caches, including copies of item records, so a half-synced replica can still list everything and show what is missing.
-- **Condemnation records** are neither truth nor cache. If they are lost, nothing gets deleted until retention runs again. That is the safe direction.
+- **Condemnation records** are not truth. If they are lost, nothing gets deleted until retention runs again and writes new ones. That is the safe direction.
 
 ### Inside one pack
 
