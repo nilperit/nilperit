@@ -12,6 +12,7 @@ NilPerit is a personal backup system. It pulls data from cloud services and loca
 2. [`docs/glossary.md`](docs/glossary.md) — every technical term. Use these terms with these meanings only.
 3. [`docs/overview.md`](docs/overview.md) — an informal explainer with diagrams. Not normative, but it must match `format.md`.
 4. [`docs/decisions/`](docs/decisions/) — architecture decision records: why things are the way they are.
+5. [`docs/pre-v1.md`](docs/pre-v1.md) — what must be decided or checked before format version 1. Add an item there when you park a decision or find a gap that you do not fix now.
 
 If the code and `format.md` disagree, stop and ask. Do not silently follow either one.
 
