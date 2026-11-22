@@ -57,6 +57,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # The action runs in a container with its own Rust. cargo-deny only reads
+      # Cargo.lock, so it does not need our pinned toolchain. Without this step,
+      # rustup in the container downloads that toolchain on every run and prints
+      # an "override toolchain is not installed" error before it continues.
+      - name: Use the toolchain of the action image
+        run: rm rust-toolchain.toml
+
       # Published by the cargo-deny maintainers. Dependabot keeps the pin current.
       - name: Check advisories, licenses, bans and sources
         uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd # v2.1.3
