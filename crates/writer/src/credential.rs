@@ -1,6 +1,7 @@
 //! The keys that a writer has: the node credential (format.md 3.2.4).
 
 use nilperit_crypto::{DedupKey, DomainKeys, ReadPublicKey, RootSeed, WriterKey};
+use nilperit_reader::Keys;
 
 /// The node credential: the public part of the read key, the dedup key and the
 /// writer key.
@@ -8,6 +9,7 @@ use nilperit_crypto::{DedupKey, DomainKeys, ReadPublicKey, RootSeed, WriterKey};
 /// It lets a writer add data. It cannot open an R object, because it has no
 /// private part of the read key (ADR 0004).
 pub struct Credential {
+    dedup: DedupKey,
     domains: DomainKeys,
     writer: WriterKey,
     read_public_key: ReadPublicKey,
@@ -17,6 +19,7 @@ impl Credential {
     /// Collects the keys of a node.
     pub fn new(dedup: &DedupKey, writer: WriterKey, read_public_key: ReadPublicKey) -> Self {
         Self {
+            dedup: DedupKey::from_bytes(*dedup.as_bytes()),
             domains: dedup.domain_keys(),
             writer,
             read_public_key,
@@ -33,7 +36,18 @@ impl Credential {
         )
     }
 
-    /// The keys of the hash domains: object IDs, item keys and content hashes.
+    /// The keys that a reader needs to open the vault as a node does: without the
+    /// read key. The sync engine reads the journal with them (format.md 3.2.4).
+    pub fn reader_keys(&self) -> Keys {
+        Keys::for_node(
+            WriterKey::from_bytes(*self.writer.as_bytes()),
+            self.read_public_key.clone(),
+            &self.dedup,
+        )
+    }
+
+    /// The keys of the hash domains: object IDs, item keys, content hashes and
+    /// source IDs.
     pub fn domains(&self) -> &DomainKeys {
         &self.domains
     }

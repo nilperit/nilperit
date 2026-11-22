@@ -136,3 +136,113 @@ impl WriteTarget for Flaky<'_> {
         self.inner.remove_lock().await
     }
 }
+
+use crate::connector::{Changes, Connector, ConnectorError, SourceItem};
+use nilperit_crypto::RootSeed;
+use nilperit_format::SourceId;
+use nilperit_reader::Vault;
+use std::io::{self, Cursor};
+
+/// A source that is a list in memory.
+pub struct ListConnector {
+    /// The items: native ID, and the content or the reason why it cannot be read.
+    pub items: Vec<(String, Result<Vec<u8>, io::ErrorKind>)>,
+    /// Whether the list is complete (see `Changes::complete`).
+    pub complete: bool,
+    /// The native IDs that the source no longer has (for a list that is not complete).
+    pub deleted: Vec<String>,
+    /// The cursor after the run.
+    pub cursor: Option<Vec<u8>>,
+    /// The cursors that the engine gave, one for each run.
+    pub received: Vec<Option<Vec<u8>>>,
+}
+
+impl ListConnector {
+    /// A complete list of items that can be read.
+    pub fn new(items: &[(&str, &[u8])]) -> Self {
+        Self {
+            items: items
+                .iter()
+                .map(|(id, data)| ((*id).to_string(), Ok(data.to_vec())))
+                .collect(),
+            complete: true,
+            deleted: Vec::new(),
+            cursor: None,
+            received: Vec::new(),
+        }
+    }
+}
+
+impl Connector for ListConnector {
+    async fn changes(&mut self, cursor: Option<&[u8]>) -> Result<Changes, ConnectorError> {
+        self.received.push(cursor.map(<[u8]>::to_vec));
+        let items = self
+            .items
+            .iter()
+            .map(|(id, data)| {
+                let data = data.clone();
+                SourceItem {
+                    native_id: id.as_bytes().to_vec(),
+                    title: id.clone(),
+                    modified: Some(1_700_000_000_000),
+                    created: None,
+                    media_type: Some("application/octet-stream".into()),
+                    metadata: None,
+                    contents: vec![Box::new(move || match data {
+                        Ok(bytes) => Ok(Box::new(Cursor::new(bytes)) as Box<dyn io::Read>),
+                        Err(kind) => Err(io::Error::from(kind)),
+                    })],
+                }
+            })
+            .collect();
+        Ok(Changes {
+            complete: self.complete,
+            items,
+            deleted: self
+                .deleted
+                .iter()
+                .map(|id| id.as_bytes().to_vec())
+                .collect(),
+            cursor: self.cursor.clone(),
+        })
+    }
+}
+
+/// What an owner reads from a vault for one source.
+#[derive(Debug, PartialEq, Eq)]
+pub struct State {
+    /// The sequence number of the head of the journal.
+    pub sequence: u64,
+    /// The connector cursor of the head.
+    pub cursor: Option<Vec<u8>>,
+    /// The title and the bytes of each item, sorted.
+    pub files: Vec<(String, Vec<u8>)>,
+}
+
+/// Reads a source the way a restore does. `None` when the source has no snapshot
+/// header.
+pub fn read_state(target: &MemoryTarget, seed: &RootSeed, source: &SourceId) -> Option<State> {
+    let vault = block_on(Vault::open(target, seed)).unwrap();
+    let index = block_on(vault.scan_packs()).unwrap();
+    assert!(index.skipped().is_empty());
+    let snapshots = block_on(vault.read_snapshots()).unwrap();
+    assert!(snapshots.skipped().is_empty());
+    let head = snapshots.head(source)?;
+    let state = block_on(vault.replay_journal(&index, head)).unwrap();
+    let mut files = Vec::new();
+    for (key, item) in &state.items {
+        let record = block_on(vault.read_item(&index, key, item)).unwrap();
+        let mut data = Vec::new();
+        for content in &record.content {
+            data.extend(block_on(vault.read_content_to_vec(&index, content)).unwrap());
+        }
+        assert_eq!(data.len() as u64, record.size);
+        files.push((record.title, data));
+    }
+    files.sort();
+    Some(State {
+        sequence: state.sequence,
+        cursor: state.connector_cursor,
+        files,
+    })
+}

@@ -104,7 +104,7 @@ impl VaultEssentials {
 /// One chunking profile (format.md 5.2.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChunkingProfile {
-    /// The ID of the profile. It is not 0.
+    /// The ID of the chunking profile. It is not 0.
     pub id: u32,
     /// The name of the chunking algorithm.
     pub algorithm: String,
