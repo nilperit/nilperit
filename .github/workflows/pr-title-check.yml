@@ -1,7 +1,7 @@
-name: PR title
+name: PR title check
 
 # The PR title becomes the squash commit message on main, so it must follow
-# Conventional Commits. Keep the pattern in sync with main-commit.yml.
+# Conventional Commits. Keep the pattern in sync with main-commit-check.yml.
 
 on:
   pull_request:
