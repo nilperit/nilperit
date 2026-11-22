@@ -50,7 +50,6 @@ fn range32(start: u8) -> [u8; 32] {
 const A9_WORDS: &str = "pass artist pottery enable foil fatigue pencil crystal produce grace hill garage arch sun solution note repeat saddle common install rookie gain wife theme";
 const A9_DEDUP: &str = "817539ea4e9be3fb2c37fc4e8772d525e485efa986ddef131fa2791e397c81fb";
 const A9_WRITER: &str = "602b54db5ed2a3c74b36a568b852de6a126d2dec9b1971ea7c1f3ec4cf422c6c";
-const A9_CHUNKER: &str = "ae43d7f36553f9e55159aaad739ea9f2070af24ad467a781039ad161107290d5";
 const A9_READ: &str = "e943a3cea78674c96b2354ec08caf3064ed001589a3919e75e59a4af2a333b77";
 const A9_CONFIG_MAC_KEY: &str = "b6de912a5d95d54c54ac2487914b5ab0a3976e70ea126ac390eb1e5569ee953f";
 const A9_SNAPSHOT_HEADER_KEY: &str =
@@ -80,7 +79,6 @@ fn a9_keys_from_the_root_seed() {
     let root = a9_root();
     assert_eq!(root.dedup_key().as_bytes(), &bytes32(A9_DEDUP));
     assert_eq!(root.writer_key().as_bytes(), &bytes32(A9_WRITER));
-    assert_eq!(root.chunker_seed().as_bytes(), &bytes32(A9_CHUNKER));
     assert_eq!(root.read_key().as_bytes(), &bytes32(A9_READ));
 }
 

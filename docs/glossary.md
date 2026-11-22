@@ -45,9 +45,6 @@ A part of the bytes of a *content*. NilPerit cuts content into chunks with conte
 **Chunk ID**
 The *object ID* of a *chunk*. Identical plaintext always gives the same chunk ID in the same *vault*.
 
-**Chunker seed**
-A secret value that NilPerit derives from the *root seed*. It is reserved for a chunking algorithm that cuts at places that depend on the content. The algorithm `fixed`, which is the only one so far, does not use it.
-
 **Chunking profile**
 A set of chunker settings: algorithm, minimum size, average size, and maximum size. The *vault config* contains a table of chunking profiles. Each *content object* records the profile that NilPerit used for it.
 
@@ -151,7 +148,7 @@ The reader-only program. It can list, extract, verify, and salvage data. It cann
 A running NilPerit process that gets data from *sources* and writes it to a *vault*.
 
 **Node credential**
-The set of keys that a *node* needs to write: the public part of the *read key*, the *dedup key*, the *writer key*, and the *chunker seed*. With the node credential, a node can add data but cannot read stored *content*.
+The set of keys that a *node* needs to write: the public part of the *read key*, the *dedup key*, the and the *writer key*. With the node credential, a node can add data but cannot read stored *content*.
 
 **Object**
 One encoded unit of data in a *vault*, for example a *chunk*, a *content object*, an *item record*, a *journal entry*, or a tree node. Each object has an *object ID*, an object type, and a *key class*.

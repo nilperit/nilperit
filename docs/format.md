@@ -59,9 +59,8 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | Read key | X-Wing key pair (X25519 + ML-KEM-768) | Owner (private part) | Opens item records and chunks |
 | Dedup key | 32-byte key | Node | Source of the domain keys (see 3.2.5) |
 | Writer key | 32-byte symmetric key | Node | Encrypts objects that the node reads again |
-| Chunker seed | 32 bytes | Node | Reserved for a content-defined chunking algorithm (see 5.2.4.2). The algorithm `fixed` does not use it. |
 
-3.2.4. The node credential is: the public part of the read key, the dedup key, the writer key, and the chunker seed. A node MUST NOT have the private part of the read key, unless the owner gives it explicitly.
+3.2.4. The node credential is: the public part of the read key, the dedup key, and the writer key. A node MUST NOT have the private part of the read key, unless the owner gives it explicitly.
 
 3.2.5. **Hash domains.** NilPerit makes three kinds of keyed hash with the dedup key. Each kind is a hash domain. For each hash domain, NilPerit derives a domain key: BLAKE3 `derive_key` with the context string of the domain and the dedup key as key material. The domain key is 32 bytes.
 
@@ -83,7 +82,6 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 |---|---|
 | Dedup key | `nilperit 2026-11-22 dedup-key` |
 | Writer key | `nilperit 2026-11-22 writer-key` |
-| Chunker seed | `nilperit 2026-11-22 chunker-seed` |
 | Read key | `nilperit 2026-11-22 read-key` |
 
 3.2.9.1. The 32 bytes of the read key are the decapsulation key of X-Wing (see 3.3.2.1). The public part of the read key is the encapsulation key that X-Wing makes from it.
@@ -241,7 +239,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 5.2.4.1. **The algorithm `fixed`.** The content is cut into chunks of the same size, from the start to the end. The maximum size of the profile is the size of a chunk. The last chunk holds the rest and can be shorter. Content that is not larger than one chunk is one chunk. Content without data has no chunk (see 5.3.1.1). A profile with this algorithm MUST have the minimum size 0, the average size 0, and a maximum size above 0.
 
-5.2.4.2. **Other algorithms.** The format can use other algorithms under other names. A reader does not need the chunking algorithm, because a content object lists its chunks. A content-defined algorithm, which cuts at places that depend on the content, can be added later as a new profile, for example when measurements show that it saves space for a connector (see pre-v1.md). The chunker seed (see 3.2.3) is reserved for such an algorithm. The algorithm `fixed` does not use it.
+5.2.4.2. **Other algorithms.** The format can use other algorithms under other names. A reader does not need the chunking algorithm, because a content object lists its chunks. A content-defined algorithm, which cuts at places that depend on the content, can be added later as a new profile, for example when measurements show that it saves space for a connector (see pre-v1.md). Such an algorithm would need a secret key, which a later version derives from the root seed (see pre-v1.md).
 
 ### 5.3. Content object (truth)
 
@@ -914,7 +912,6 @@ A.9.2. The keys from the root seed (see 3.2.9):
 |---|---|
 | Dedup key | `817539ea4e9be3fb2c37fc4e8772d525e485efa986ddef131fa2791e397c81fb` |
 | Writer key | `602b54db5ed2a3c74b36a568b852de6a126d2dec9b1971ea7c1f3ec4cf422c6c` |
-| Chunker seed | `ae43d7f36553f9e55159aaad739ea9f2070af24ad467a781039ad161107290d5` |
 | Read key | `e943a3cea78674c96b2354ec08caf3064ed001589a3919e75e59a4af2a333b77` |
 
 A.9.3. The keys from the writer key of A.9.2 (see 3.3.3, 3.3.7, and 3.3.8):
