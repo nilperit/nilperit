@@ -230,28 +230,9 @@ mod tests {
         entry_id
     }
 
-    /// Reads the vault as a restore would: the state at the head, and the bytes of
-    /// each item, by native ID.
     fn read_all(target: &MemoryTarget) -> (u64, Vec<(String, Vec<u8>)>) {
-        let vault = block_on(Vault::open(target, &seed())).unwrap();
-        let index = block_on(vault.scan_packs()).unwrap();
-        assert!(index.skipped().is_empty());
-        let snapshots = block_on(vault.read_snapshots()).unwrap();
-        assert!(snapshots.skipped().is_empty());
-        let head = snapshots.head(&SOURCE).unwrap();
-        let state = block_on(vault.replay_journal(&index, head)).unwrap();
-        let mut files = Vec::new();
-        for (key, item) in &state.items {
-            let record = block_on(vault.read_item(&index, key, item)).unwrap();
-            let mut data = Vec::new();
-            for content in &record.content {
-                data.extend(block_on(vault.read_content_to_vec(&index, content)).unwrap());
-            }
-            assert_eq!(data.len() as u64, record.size);
-            files.push((record.title, data));
-        }
-        files.sort();
-        (state.sequence, files)
+        let state = crate::test_util::read_state(target, &seed(), &SOURCE).unwrap();
+        (state.sequence, state.files)
     }
 
     fn new_vault(target: &MemoryTarget, rng: &mut TestRng) -> VaultEssentials {
