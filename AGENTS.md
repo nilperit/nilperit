@@ -53,6 +53,7 @@ nilperit-writer
 nilperit-connector-*, nilperit-node
 ```
 
+- `nilperit-fuzz` (the checks for the mutation tests and the fuzzers) is above the writer. Nothing that ships may depend on it.
 - Never add a dependency that points "upward" (for example reader → writer).
 - `nilperit-format`, `nilperit-crypto` and `nilperit-reader` must build for `wasm32-unknown-unknown`.
 - `nilperit-format`, `nilperit-crypto` and `nilperit-reader` must not depend on network clients, OAuth crates or a specific async runtime (such as tokio). Async traits are allowed in the reader, so the browser can use async `fetch` behind the storage trait.
