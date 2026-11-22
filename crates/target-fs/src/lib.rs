@@ -16,7 +16,7 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// The prefix of the temporary files of a write. No pack and no snapshot header has
 /// a name that starts with a dot, so a reader ignores a temporary file that a crash
@@ -147,6 +147,50 @@ fn collect(folder: &Path, prefix: &str, files: &mut Vec<String>) -> Result<(), T
     Ok(())
 }
 
+/// Whether a failure can be over in a moment. Windows refuses to rename, link or delete a
+/// file for a short time after it was made or read, when something else has it open: a virus
+/// scanner, the indexer of the search, or a file that waits to be deleted. The error is
+/// "access denied" or "sharing violation" (the codes 5 and 32), and it passes by itself.
+fn transient(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::PermissionDenied | io::ErrorKind::ResourceBusy
+    ) || error.raw_os_error() == Some(32)
+}
+
+/// Does `operation`, and does it again after a short wait when it fails in a way that
+/// can pass (see [`transient`]), at most `attempts` times in all. The wait is `first_wait`,
+/// and doubles each time up to 100 milliseconds. A failure that does not pass, and the last
+/// failure, are returned as they are.
+fn retry<T>(
+    attempts: u32,
+    first_wait: Duration,
+    mut operation: impl FnMut() -> io::Result<T>,
+) -> io::Result<T> {
+    let mut wait = first_wait;
+    let mut attempt = 1;
+    loop {
+        match operation() {
+            Err(e) if attempt < attempts && transient(&e) => {
+                std::thread::sleep(wait);
+                wait = (wait * 2).min(Duration::from_millis(100));
+                attempt += 1;
+            }
+            other => return other,
+        }
+    }
+}
+
+/// The retries of a file system operation on this system: on Windows a few (about half a
+/// second in all), elsewhere none. A real permission problem is still an error, only later.
+fn with_retries<T>(operation: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    retry(
+        if cfg!(windows) { 8 } else { 1 },
+        Duration::from_millis(5),
+        operation,
+    )
+}
+
 /// A name for a temporary file that no other write uses.
 fn temporary_name() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -199,7 +243,7 @@ impl WriteTarget for FsTarget {
         // `resolve` gives a path with at least one part, so there is a folder.
         let folder = full.parent().unwrap_or(&self.root).to_path_buf();
         let temporary = write_temporary(&folder, bytes)?;
-        if let Err(e) = fs::rename(&temporary, &full) {
+        if let Err(e) = with_retries(|| fs::rename(&temporary, &full)) {
             let _ = fs::remove_file(&temporary);
             return Err(failure(e));
         }
@@ -213,7 +257,7 @@ impl WriteTarget for FsTarget {
         let temporary = write_temporary(&folder, bytes)?;
         // A hard link gives the complete file its name in one step, and fails when the
         // name exists. A reader never sees a part of the file.
-        let linked = fs::hard_link(&temporary, &full);
+        let linked = with_retries(|| fs::hard_link(&temporary, &full));
         let result = match linked {
             Ok(()) => Ok(true),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(false),
@@ -233,7 +277,8 @@ impl WriteTarget for FsTarget {
     }
 
     async fn remove_lock(&self) -> Result<(), TargetError> {
-        match fs::remove_file(self.resolve(LOCK_PATH)?) {
+        let lock = self.resolve(LOCK_PATH)?;
+        match with_retries(|| fs::remove_file(&lock)) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(failure(e)),
@@ -505,5 +550,86 @@ mod tests {
         )
         .unwrap();
         assert_eq!(block_on(target.list("packs")).unwrap(), ["packs/ab/real"]);
+    }
+
+    #[test]
+    fn a_failure_that_passes_is_tried_again() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let result = retry(5, Duration::ZERO, || {
+            calls.set(calls.get() + 1);
+            if calls.get() < 4 {
+                Err(io::ErrorKind::PermissionDenied.into())
+            } else {
+                Ok(calls.get())
+            }
+        });
+        assert_eq!(result.unwrap(), 4);
+        // A sharing violation (the code 32) passes too, and so does a busy resource.
+        let calls = Cell::new(0);
+        let result = retry(3, Duration::ZERO, || {
+            calls.set(calls.get() + 1);
+            match calls.get() {
+                1 => Err(io::Error::from_raw_os_error(32)),
+                2 => Err(io::ErrorKind::ResourceBusy.into()),
+                _ => Ok(()),
+            }
+        });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn a_failure_that_does_not_pass_is_returned_at_once_and_so_is_the_last_one() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let error = retry(5, Duration::ZERO, || -> io::Result<()> {
+            calls.set(calls.get() + 1);
+            Err(io::ErrorKind::NotFound.into())
+        })
+        .unwrap_err();
+        assert_eq!((error.kind(), calls.get()), (io::ErrorKind::NotFound, 1));
+
+        let calls = Cell::new(0);
+        let error = retry(3, Duration::ZERO, || -> io::Result<()> {
+            calls.set(calls.get() + 1);
+            Err(io::ErrorKind::PermissionDenied.into())
+        })
+        .unwrap_err();
+        // A real permission problem is an error after the last try.
+        assert_eq!(
+            (error.kind(), calls.get()),
+            (io::ErrorKind::PermissionDenied, 3)
+        );
+
+        // One attempt is one try, with no wait.
+        let calls = Cell::new(0);
+        assert!(
+            retry(1, Duration::from_secs(60), || -> io::Result<()> {
+                calls.set(calls.get() + 1);
+                Err(io::ErrorKind::PermissionDenied.into())
+            })
+            .is_err()
+        );
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn the_wait_doubles_up_to_a_limit() {
+        use std::time::Instant;
+        // Five failures of an operation: waits of 1, 2, 4, 8 ms and a last try that works.
+        let started = Instant::now();
+        let mut failures = 4;
+        retry(8, Duration::from_millis(1), || {
+            if failures > 0 {
+                failures -= 1;
+                Err(io::ErrorKind::PermissionDenied.into())
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+        let waited = started.elapsed();
+        assert!(waited >= Duration::from_millis(15), "{waited:?}");
+        assert!(waited < Duration::from_secs(5), "{waited:?}");
     }
 }
