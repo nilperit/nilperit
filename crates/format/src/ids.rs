@@ -86,6 +86,13 @@ hash_type!(
 );
 
 hash_type!(
+    /// The ID of the holder of a writer lock: 16 random bytes that a node makes each
+    /// time that it takes the lock (format.md 8.6.1).
+    HolderId,
+    SHORT_ID_LEN
+);
+
+hash_type!(
     /// The ID of a vault: 16 random bytes in the vault config (format.md 7.2.2).
     VaultId,
     SHORT_ID_LEN

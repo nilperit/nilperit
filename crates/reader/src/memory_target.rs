@@ -28,6 +28,11 @@ impl MemoryTarget {
         self.files.borrow_mut().insert(path.to_string(), bytes);
     }
 
+    /// Whether a file exists under the path.
+    pub fn contains(&self, path: &str) -> bool {
+        self.files.borrow().contains_key(path)
+    }
+
     /// Removes a file. It returns whether the file existed.
     pub fn remove(&self, path: &str) -> bool {
         self.files.borrow_mut().remove(path).is_some()

@@ -116,11 +116,23 @@ impl Target for Flaky<'_> {
 
 impl WriteTarget for Flaky<'_> {
     async fn put(&self, path: &str, bytes: &[u8]) -> Result<(), TargetError> {
+        // The heartbeat of the lock is not part of what the tests count.
+        if path == nilperit_reader::layout::LOCK_PATH {
+            return self.inner.put(path, bytes).await;
+        }
         if self.puts_left.get() == 0 {
             return Err(TargetError::Other("the disk failed".into()));
         }
         self.puts_left.set(self.puts_left.get() - 1);
         self.log.borrow_mut().push(path.to_string());
         self.inner.put(path, bytes).await
+    }
+
+    async fn put_new(&self, path: &str, bytes: &[u8]) -> Result<bool, TargetError> {
+        self.inner.put_new(path, bytes).await
+    }
+
+    async fn remove_lock(&self) -> Result<(), TargetError> {
+        self.inner.remove_lock().await
     }
 }
