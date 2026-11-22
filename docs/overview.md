@@ -85,13 +85,15 @@ vault/
 
 ```mermaid
 flowchart LR
-    H["Header<br/>version, algorithms"] --> B["Body<br/>encrypted objects, R and W mixed"] --> T["Trailer<br/>sealed pack key + object table"] --> F["Footer<br/>trailer offset"]
+    H["Header<br/>magic, version, pack class, algorithm names"] --> B["Body<br/>packed objects, R and W mixed, no gaps"] --> T["Trailer<br/>sealed pack key + object table"] --> F["Footer<br/>24 bytes: where the trailer is"]
 ```
 
 - The **pack key** opens the R objects. It is sealed to the read key with a hybrid post-quantum KEM, so only the owner can open it.
 - The **object table** (W) lists every object in the pack: object ID, type, key class, offset, packed size, compression, unpacked size. The node reads it to rebuild the index and to clean up, without ever opening an R object.
 - A writer can **compress** an object before it encrypts it. The object table names the algorithm (for example `none` or `deflate`) and the unpacked size, so a reader can undo it and check the result. Object IDs never depend on compression.
+- A reader finds everything from the **end of the file**: the footer says where the trailer is, and the trailer holds the object table. With the table, it fetches single objects by byte range, which suits a browser.
 - The **name of a pack** is the hash of the whole encrypted file. Anyone can detect a damaged pack without keys.
+- The **pack is the unit of damage**. If the trailer is damaged, that pack cannot be read, and NilPerit repairs it from another replica or from parity data. Other packs are not affected.
 
 ## IDs and hash domains
 
