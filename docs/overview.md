@@ -147,10 +147,11 @@ flowchart RL
 ```
 
 1. **Every sync adds a delta entry** (E1, E2, …) with only the changes.
-2. **Every so often, a checkpoint** (C0, C3) records the complete state in two trees:
+2. **Every so often, a checkpoint** (C0, C3) records the complete state:
+   - the **connector cursor**, so the next sync continues from here and does not read the whole source again;
    - the **checkpoint tree**: every item that exists at that moment;
    - the **archive tree**: every item version that is gone but still within its retention, with when it was first and last seen.
-3. **The current state is the newest checkpoint plus the deltas after it**: here C3 + E4 + E5. NilPerit never needs to replay further back.
+3. **The current state is the newest checkpoint plus the deltas after it**: here C3 + E4 + E5. NilPerit never needs to replay further back. The connector cursor to continue from is the one in the head (E5).
 4. **The snapshot header marks the head.** Newest means the highest sequence number, not the latest clock time.
 5. **A crash leaves an orphan.** An entry that was written but never committed is ignored; the next sync builds on the real head. This is not an error and not a fork. A **fork** is only two *committed* entries with the same parent, which can only come from two writers or from damage. NilPerit reports a fork and never resolves it on its own.
 
