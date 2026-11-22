@@ -30,7 +30,7 @@ The reader software that a *vault* contains. It lets a person read the vault wit
 Data that NilPerit can make again from the *truth*. When a cache is missing or damaged, NilPerit rebuilds it. Examples: the *index*, *item maps*, *archive maps*, *snapshot headers*.
 
 **Checkpoint**
-A *journal entry* that contains the complete state of a *source* at one time: a *checkpoint tree* and an *archive tree*. A checkpoint does not depend on journal entries before it.
+A *journal entry* that contains the complete state of a *source* at one time: a *checkpoint tree*, an *archive tree*, and the *connector cursor* of that state. A checkpoint does not depend on journal entries before it.
 
 **Checkpoint tree**
 A tree in a *checkpoint* that contains all *items* that exist at that time. A checkpoint tree is *truth*.
@@ -60,7 +60,7 @@ A record that marks a range of *journal entries* for removal, after *compaction*
 The code that gets data from one kind of external service or local system, for example Gmail or a local folder.
 
 **Connector cursor**
-A value from an external service that marks how far a *connector* has read the changes of that service, for example a Gmail history ID. NilPerit stores it in each *delta entry*.
+A value from an external service that marks how far a *connector* has read the changes of that service, for example a Gmail history ID. NilPerit stores it in each *delta entry* and in each *checkpoint*. A *connector* continues from the cursor of the *journal head*.
 
 **Content**
 The bytes of one stored thing, for example one raw email message or one file.

@@ -204,14 +204,19 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 - parent entry;
 - changes: items added, changed, and deleted, as item key → item record ID and content object IDs.
 
-5.5.3. A **checkpoint** contains the complete state of the source at one time. It points to two trees:
+5.5.3. A **checkpoint** contains the complete state of the source at one time. It contains:
 
+- the connector cursor of that state;
 - the **checkpoint tree**: all items that exist at that time;
 - the **archive tree**: all item versions that do not exist at that time but that item retention still keeps (old versions and deleted items), each with the time NilPerit saw it first and the time NilPerit saw it last.
+
+5.5.3.1. The connector cursor of a checkpoint MUST be the connector cursor that the source had in the state that the checkpoint contains. A checkpoint that replaces a range of journal entries (see 11.3.1) MUST contain the connector cursor of the last entry in that range.
 
 5.5.4. Checkpoint trees and archive trees are truth. Their nodes are stored in data packs.
 
 5.5.5. The current state of a source is the newest checkpoint plus all delta entries after it.
+
+5.5.5.1. The current connector cursor of a source is the connector cursor in its journal head (see 5.5.8). It does not matter if the journal head is a delta entry or a checkpoint. A connector MUST continue from this cursor. NilPerit MUST NOT use the cursor of an orphan. Without a cursor, a connector has to read the whole source again.
 
 5.5.6. NilPerit MUST write a checkpoint after a configurable number of delta entries or after a configurable time.
 
@@ -437,6 +442,7 @@ The items below are not fixed in this draft:
 - Key derivation for the W keys of files outside packs and for the vault config MAC (3.3.7, 3.3.8).
 - Contents and names in recovery/ (7.3).
 - Parity data format (10.4).
+- Fields of a checkpoint other than the connector cursor and the two trees (5.5.3): for example its time, and whether it has a snapshot ID. A checkpoint that compaction writes (11.3.1) does not come from a synchronization.
 - Object type IDs and the field numbers of each object type (schema dictionary).
 
 ## Appendix A. Test vectors
