@@ -10,7 +10,8 @@ NilPerit is a personal backup system. It pulls data from cloud services and loca
 
 1. [`docs/format.md`](docs/format.md) — the normative vault format. It is the source of truth for how data is stored.
 2. [`docs/glossary.md`](docs/glossary.md) — every technical term. Use these terms with these meanings only.
-3. [`docs/decisions/`](docs/decisions/) — architecture decision records: why things are the way they are.
+3. [`docs/overview.md`](docs/overview.md) — an informal explainer with diagrams. Not normative, but it must match `format.md`.
+4. [`docs/decisions/`](docs/decisions/) — architecture decision records: why things are the way they are.
 
 If the code and `format.md` disagree, stop and ask. Do not silently follow either one.
 
@@ -56,7 +57,8 @@ nilperit-connector-*, nilperit-node
 
 - `docs/format.md` and `docs/glossary.md` are written in loose ASD-STE100 Simplified Technical English with RFC 2119 keywords: short sentences, one statement per sentence, active voice, consistent terms.
 - ADRs are plain English. Until format version 1, ADRs may be corrected in place. From format version 1 on, do not rewrite an accepted ADR; add a new one that supersedes it.
-- A change to the format updates `format.md` in the same pull request.
+- A change to the format updates `format.md` in the same pull request, and updates `docs/overview.md` when the change affects anything the overview explains.
+- `docs/overview.md` is plain English and not normative. When it and `format.md` disagree, `format.md` wins and the overview gets fixed.
 - A new term goes into the glossary before it is used elsewhere.
 - Use American English spelling in all documents and code comments.
 

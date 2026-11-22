@@ -2,6 +2,8 @@
 
 Status: **Draft**. This specification is not stable. It will change without notice until format version 1. Do not keep real data in a vault of a draft version.
 
+For an informal explanation with diagrams, see [overview.md](overview.md). That document is not normative.
+
 Each vault contains a copy of this file with the name `FORMAT.md`. With this file, the schema dictionary, and the recovery phrase, a person can read a vault without NilPerit.
 
 ## 1. Conventions
