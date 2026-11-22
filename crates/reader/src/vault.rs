@@ -62,12 +62,20 @@ impl<T: Target> Vault<T> {
     /// It chooses the vault config as format.md 7.2.6 says and checks that the
     /// config belongs to the root seed.
     pub async fn open(target: T, seed: &RootSeed) -> Result<Self, VaultError> {
-        let keys = Keys::from_seed(seed);
+        Self::open_with(target, Keys::from_seed(seed)).await
+    }
+
+    /// Opens a vault with the given keys. A node uses [`Keys::for_node`]: it opens
+    /// the vault and reads every W object, and it cannot read an R object.
+    ///
+    /// It chooses the vault config as format.md 7.2.6 says and checks that the
+    /// public part of the read key in the config is the one of `keys`.
+    pub async fn open_with(target: T, keys: Keys) -> Result<Self, VaultError> {
         let config = choose_config(&target, keys.writer()).await?;
         if config.essentials.key_encapsulation != KEM_NAME {
             return Err(VaultError::UnknownAlgorithm);
         }
-        if config.essentials.read_public_key[..] != keys.read().public_key().to_bytes()[..] {
+        if config.essentials.read_public_key[..] != keys.read_public_key().to_bytes()[..] {
             return Err(VaultError::ChangedConfig);
         }
         Ok(Self {
@@ -351,5 +359,45 @@ mod tests {
             block_on(Vault::open(Failing, &seed())),
             Err(VaultError::Target(TargetError::Other(_)))
         ));
+    }
+
+    fn node_keys(seed: &RootSeed) -> Keys {
+        Keys::for_node(
+            seed.writer_key(),
+            seed.read_key().public_key(),
+            &seed.dedup_key(),
+        )
+    }
+
+    #[test]
+    fn a_node_opens_the_vault_without_the_read_key() {
+        let file = file(&config(&seed(), 1, 1));
+        let target = target(Some(file.clone()), Some(file));
+        let vault = block_on(Vault::open_with(target, node_keys(&seed()))).unwrap();
+        assert_eq!(vault.config().sequence, 1);
+        assert!(vault.keys().read().is_none());
+    }
+
+    #[test]
+    fn a_node_checks_the_read_public_key_of_the_vault_config() {
+        // The config is authentic, but names the read key of another seed.
+        let other = RootSeed::from_bytes([8; 32]);
+        let file = file(&config(&other, 1, 1));
+        let target = target(Some(file.clone()), Some(file));
+        assert!(matches!(
+            block_on(Vault::open_with(target, node_keys(&seed()))),
+            Err(VaultError::ChangedConfig)
+        ));
+    }
+
+    #[test]
+    fn an_owner_has_the_read_key_and_its_public_part() {
+        let file = file(&config(&seed(), 1, 1));
+        let vault = open(target(Some(file.clone()), Some(file))).unwrap();
+        assert!(vault.keys().read().is_some());
+        assert_eq!(
+            vault.keys().read_public_key().to_bytes()[..],
+            seed().read_key().public_key().to_bytes()[..]
+        );
     }
 }

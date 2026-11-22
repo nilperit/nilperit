@@ -81,6 +81,9 @@ pub enum ObjectReadError {
     UnknownAlgorithm,
     /// The seal does not open with the read key.
     Seal(SealError),
+    /// The object is an R object, and the reader has no read key. A node never
+    /// has it (ADR 0004).
+    NoReadKey,
     /// The tag of the object is not correct: the object is damaged, or it does
     /// not belong to its entry (format.md 6.7.2.3).
     NotAuthentic,
@@ -102,6 +105,7 @@ impl fmt::Display for ObjectReadError {
             Self::WrongType => f.write_str("the object has another type than expected"),
             Self::UnknownAlgorithm => f.write_str("the pack uses an unknown algorithm"),
             Self::Seal(e) => write!(f, "the seal does not open: {e}"),
+            Self::NoReadKey => f.write_str("the object needs the read key, which is not here"),
             Self::NotAuthentic => f.write_str("the object is not authentic"),
             Self::BadCompression => f.write_str("the compressed bytes are not valid"),
             Self::SizeMismatch => f.write_str("the object does not have its unpacked size"),
@@ -244,10 +248,11 @@ impl Pack {
 
     /// Opens the sealed pack key (format.md 3.3.2.3).
     fn open_pack_key(&self, keys: &Keys) -> Result<AeadKey, ObjectReadError> {
+        let read = keys.read().ok_or(ObjectReadError::NoReadKey)?;
         if self.header.key_encapsulation.as_deref() != Some(KEM_NAME) {
             return Err(ObjectReadError::UnknownAlgorithm);
         }
-        open_seal(keys.read(), &self.seal, &self.header_hash).map_err(ObjectReadError::Seal)
+        open_seal(read, &self.seal, &self.header_hash).map_err(ObjectReadError::Seal)
     }
 
     /// The name of the pack.
@@ -648,5 +653,29 @@ mod tests {
         let pack = block_on(Pack::open(&target, name, &keys.writer)).unwrap();
         let result = read(&pack, &target, &ids[0], &keys.keys());
         assert!(matches!(result, Err(ObjectReadError::NotAuthentic)));
+    }
+
+    #[test]
+    fn a_node_reads_w_objects_and_not_r_objects() {
+        let objects = [
+            TestObject::new(1, KeyClass::R, Compression::None, b"secret"),
+            TestObject::new(2, KeyClass::W, Compression::None, b"structure"),
+        ];
+        let (pack, target, keys, ids) = built(&objects);
+        let node = Keys::for_node(
+            WriterKey::from_bytes(*keys.writer.as_bytes()),
+            keys.read.public_key(),
+            &keys.dedup,
+        );
+        assert_eq!(read(&pack, &target, &ids[1], &node).unwrap(), b"structure");
+        assert!(matches!(
+            read(&pack, &target, &ids[0], &node),
+            Err(ObjectReadError::NoReadKey)
+        ));
+        // The owner reads both.
+        assert_eq!(
+            read(&pack, &target, &ids[0], &keys.keys()).unwrap(),
+            b"secret"
+        );
     }
 }
