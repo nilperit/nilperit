@@ -11,6 +11,8 @@ use zeroize::Zeroize;
 
 /// Size of every hash and every key in this module, in bytes.
 pub const HASH_LEN: usize = 32;
+/// Size of a source ID, in bytes.
+pub const SOURCE_ID_LEN: usize = 16;
 
 /// One kind of keyed hash (format.md 3.2.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,6 +23,8 @@ pub enum HashDomain {
     ItemKey,
     /// Content hashes.
     ContentHash,
+    /// Source IDs.
+    SourceId,
 }
 
 impl HashDomain {
@@ -37,6 +41,7 @@ impl HashDomain {
             Self::ObjectId => "nilperit 2026-11-22 object-id",
             Self::ItemKey => "nilperit 2026-11-22 item-key",
             Self::ContentHash => "nilperit 2026-11-22 content-hash",
+            Self::SourceId => "nilperit 2026-11-22 source-id",
         }
     }
 }
@@ -79,6 +84,7 @@ impl DedupKey {
             object_id: self.domain_key(HashDomain::ObjectId),
             item_key: self.domain_key(HashDomain::ItemKey),
             content_hash: self.domain_key(HashDomain::ContentHash),
+            source_id: self.domain_key(HashDomain::SourceId),
         }
     }
 }
@@ -127,6 +133,7 @@ pub struct DomainKeys {
     object_id: DomainKey,
     item_key: DomainKey,
     content_hash: DomainKey,
+    source_id: DomainKey,
 }
 
 impl DomainKeys {
@@ -159,6 +166,18 @@ impl DomainKeys {
         h.update(&native_size.to_le_bytes());
         h.update(native_id);
         Ok(h.finalize().into())
+    }
+
+    /// The source ID (format.md 5.4.5.1): the first 16 bytes of the hash of the name
+    /// in the source ID domain. `name` is the UTF-8 bytes of the name of the source.
+    /// The caller makes sure that the name has at least 1 byte.
+    pub fn source_id(&self, name: &[u8]) -> [u8; SOURCE_ID_LEN] {
+        let mut h = self.source_id.hasher();
+        h.update(name);
+        let hash: [u8; HASH_LEN] = h.finalize().into();
+        let mut id = [0u8; SOURCE_ID_LEN];
+        id.copy_from_slice(&hash[..SOURCE_ID_LEN]);
+        id
     }
 
     /// Starts a content hash (format.md 5.3.1). Feed it the full plaintext.
@@ -235,6 +254,50 @@ mod tests {
         assert_eq!(
             hex(k.domain_key(HashDomain::ContentHash).as_bytes()),
             "a4190220377899bde0d628774ca52f067303395c2c18784c9bb99cbd9a964cb8"
+        );
+        assert_eq!(
+            hex(k.domain_key(HashDomain::SourceId).as_bytes()),
+            "3005b889ce6b6494d6d31c5e9bdb7fb5eade93a6136cdb2cdb31b7a597b56679"
+        );
+    }
+
+    #[test]
+    fn source_id_vectors() {
+        // Format.md A.4.2, made with the Python `blake3` package.
+        let keys = dedup().domain_keys();
+        for (name, id) in [
+            ("photos", "c291ee539b980f55d910158694c8ba95"),
+            ("/home/user/Pictures", "4bd83e66b78ec3f4589f4029a05e04bd"),
+            ("a", "0f33fcc7737c26dfb45e860b49d7c57d"),
+        ] {
+            assert_eq!(hex(&keys.source_id(name.as_bytes())), id, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_source_id_depends_on_every_byte_of_the_name_and_on_the_key() {
+        let keys = dedup().domain_keys();
+        let id = keys.source_id(b"photos");
+        assert_ne!(id, keys.source_id(b"photos "));
+        assert_ne!(id, keys.source_id(b"Photos"));
+        assert_ne!(id, keys.source_id(b"photo"));
+        let other = DedupKey::from_bytes([9; 32]).domain_keys();
+        assert_ne!(id, other.source_id(b"photos"));
+    }
+
+    #[test]
+    fn a_source_id_is_not_the_start_of_a_hash_of_another_domain() {
+        // The same bytes in the content hash domain give another value.
+        let keys = dedup().domain_keys();
+        let mut content = keys.content_hasher();
+        content.update(b"photos");
+        assert_ne!(
+            keys.source_id(b"photos")[..],
+            content.finalize()[..SOURCE_ID_LEN]
+        );
+        assert_ne!(
+            keys.source_id(b"photos")[..],
+            keys.object_id(1, b"photos")[..SOURCE_ID_LEN]
         );
     }
 

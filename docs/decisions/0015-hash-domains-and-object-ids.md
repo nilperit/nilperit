@@ -5,7 +5,7 @@
 
 ## Context
 
-NilPerit makes three kinds of keyed hash with the dedup key: object IDs, item keys and content hashes. A value of one kind must never equal a value of another kind. Otherwise two different things could get the same ID, and the vault would treat them as one.
+NilPerit makes four kinds of keyed hash with the dedup key: object IDs, item keys, content hashes and source IDs. A value of one kind must never equal a value of another kind. Otherwise two different things could get the same ID, and the vault would treat them as one.
 
 Object IDs also need the object type. Most objects are CBOR envelopes that contain their type. A chunk is raw plaintext and contains no type. A chunk with the same bytes as an item record must still get a different ID.
 
