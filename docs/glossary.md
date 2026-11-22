@@ -11,6 +11,9 @@ Status: **Draft**.
 
 ## Terms
 
+**AEAD tag**
+The authentication value that XChaCha20-Poly1305 adds to each encrypted *object*. A reader rejects the object when the AEAD tag is not correct.
+
 **Archive map**
 A *cache* that shows each *item* version that a *source* ever had and that *item retention* still keeps. For each version, it records when NilPerit saw it first and when it saw it last. NilPerit makes it from the newest *archive tree* and the *delta entries* after it.
 
@@ -65,8 +68,14 @@ An *object* that describes one *content*: the ordered list of *chunk IDs*, the t
 **Data pack**
 A *pack* that contains *truth*: *chunks*, *content objects*, *item records*, *journal entries*, and the nodes of *checkpoint trees* and *archive trees*.
 
+**Context string**
+The fixed string that BLAKE3 `derive_key` uses together with its key material. Each *domain key* has its own context string.
+
 **Dedup key**
-The key for the keyed hash that makes *object IDs* and *item keys*. The *node* has this key.
+The key from which NilPerit derives the *domain keys*. The *node* has this key.
+
+**Domain key**
+The key of one *hash domain*. NilPerit derives it from the *dedup key* and the *context string* of the domain.
 
 **Envelope**
 The outer CBOR map of an *object*. It has the object type, the schema version, and the *body*.
@@ -83,11 +92,14 @@ A *journal entry* that contains only the changes since the previous journal entr
 **Index**
 A *cache* that gives the location of each object: *pack*, offset, and length.
 
+**Hash domain**
+One kind of keyed hash: *object ID*, *item key*, or content hash. Each hash domain has its own *domain key*. A hash of one hash domain never equals a hash of another.
+
 **Item**
 One thing from a *source*, for example one email message or one file.
 
 **Item key**
-The keyed hash of the native ID of an *item*, for example the hash of a Gmail message ID or of a file path.
+The hash of the source ID and the native ID of an *item* in the hash domain for item keys, for example for a Gmail message ID or a file path.
 
 **Item map**
 A *cache* that shows all *items* of a *source* at one *snapshot*. It is a sorted, content-addressed tree. NilPerit makes it from a *checkpoint tree* and the *delta entries* after it.
@@ -129,10 +141,10 @@ The CBOR map in an *envelope* that contains the fields of an *object*. The keys 
 One encoded unit of data in a *vault*, for example a *chunk*, a *content object*, an *item record*, a *journal entry*, or a tree node. Each object has an *object ID*, an object type, and a *key class*.
 
 **Stored bytes**
-The exact bytes of an *object* as a writer wrote them: the encoded *envelope*. NilPerit computes the *object ID* from the stored bytes and never from a new encoding.
+The bytes of an *object* that NilPerit hashes. For an enveloped object, they are the encoded *envelope*, exactly as a writer wrote it. For a raw object (a *chunk*), they are the plaintext before compression. NilPerit computes the *object ID* from the stored bytes and never from a new encoding.
 
 **Object ID**
-The keyed BLAKE3 hash of the plaintext encoding of an *object*, with the object type as domain separation. The key is the *dedup key*. The same object has the same object ID in all *replicas*.
+The hash of the *stored bytes* of an *object* in the *hash domain* for object IDs, with the object type in front of the bytes. The same object has the same object ID in all *replicas*.
 
 **Object table**
 The list in the trailer of a *pack* that gives, for each *object* in the pack, its *object ID*, object type, *key class*, offset, and length. The object table has *key class* W.

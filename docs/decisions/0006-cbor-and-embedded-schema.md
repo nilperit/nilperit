@@ -13,7 +13,7 @@ Objects must stay readable for decades, possibly by tools other than NilPerit. T
 - Maps use **small integer keys** for compactness (COSE style), via the `minicbor` crate.
 - Each vault carries, in plaintext, a **schema dictionary** in CDDL (RFC 8610) that maps every object type, version and field number to a name, type and description, plus a copy of `docs/format.md` named `FORMAT.md`.
 - The schema dictionary is generated from the Rust types at build time; a test fails when the code and the committed schema disagree.
-- **Object IDs** are keyed BLAKE3 hashes of the plaintext encoding, with the object type as domain separation. They do not depend on the random encryption nonce, so the same object has the same ID in every replica.
+- **Object IDs** are keyed BLAKE3 hashes of the stored plaintext bytes, with the object type in front (see ADR 0015). They do not depend on the random encryption nonce, so the same object has the same ID in every replica.
 - **Stored bytes are never re-encoded.** IDs are computed over the stored plaintext bytes, and objects are copied as bytes. Otherwise a decoder that skips unknown fields would drop them on re-encoding and silently change the ID.
 
 ## Consequences
