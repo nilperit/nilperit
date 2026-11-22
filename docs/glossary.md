@@ -235,7 +235,7 @@ The rules that control which *snapshots* NilPerit keeps.
 One *connector* account with one selection, for example "Gmail, label Banking". Each source has its own *journal*, *snapshots*, retention rules (*snapshot retention* and *item retention*), and *priority*.
 
 **Source ID**
-16 random bytes that NilPerit makes when it adds a *source*. They are in *item records*, *journal entries*, and *snapshot headers*.
+16 bytes that NilPerit derives from the name of a *source*, with a keyed hash. The same name always gives the same source ID. They are in *item records*, *journal entries*, and *snapshot headers*.
 
 **Stored bytes**
 The bytes of an *object* that NilPerit hashes. For an enveloped object, they are the encoded *envelope*, exactly as a writer wrote it. For a raw object (a *chunk*), they are the plaintext before compression. NilPerit computes the *object ID* from the stored bytes and never from a new encoding.

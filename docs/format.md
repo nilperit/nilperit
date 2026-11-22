@@ -62,13 +62,14 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.2.4. The node credential is: the public part of the read key, the dedup key, and the writer key. A node MUST NOT have the private part of the read key, unless the owner gives it explicitly.
 
-3.2.5. **Hash domains.** NilPerit makes three kinds of keyed hash with the dedup key. Each kind is a hash domain. For each hash domain, NilPerit derives a domain key: BLAKE3 `derive_key` with the context string of the domain and the dedup key as key material. The domain key is 32 bytes.
+3.2.5. **Hash domains.** NilPerit makes four kinds of keyed hash with the dedup key. Each kind is a hash domain. For each hash domain, NilPerit derives a domain key: BLAKE3 `derive_key` with the context string of the domain and the dedup key as key material. The domain key is 32 bytes.
 
 | Hash domain | Context string |
 |---|---|
 | Object ID | `nilperit 2026-11-22 object-id` |
 | Item key | `nilperit 2026-11-22 item-key` |
 | Content hash | `nilperit 2026-11-22 content-hash` |
+| Source ID | `nilperit 2026-11-22 source-id` |
 
 3.2.6. A hash in a hash domain is the keyed BLAKE3 hash with the domain key of that domain. Size: 32 bytes. Because the domain keys are different, a value of one hash domain never equals a value of another hash domain.
 
@@ -288,7 +289,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 5.4.5. **Fields that more than one object uses.**
 
-5.4.5.1. A source ID is 16 random bytes. NilPerit makes them when it adds a source. The source ID is in item records, journal entries, and snapshot headers.
+5.4.5.1. A source ID is 16 bytes. NilPerit derives it from the name of the source: the first 16 bytes of the hash of the name in the hash domain "source ID" (see 3.2.5). The hash input is the bytes of the name as UTF-8 text, without a size and without any change. A name MUST have at least 1 byte. The same name gives the same source ID in every run, so a node needs no stored state to find the journal of a source. Without the dedup key, nobody can test a name against a source ID. The source ID is in item records, journal entries, and snapshot headers.
 
 5.4.5.2. A native ID is a byte string of at least 1 byte. It is not a text string, because the names of files are not always valid text. The connector defines the meaning. Examples: a Gmail message ID, or the path of a file relative to the selected folder.
 
@@ -370,7 +371,7 @@ This procedure can select an entry that was complete but not committed. That is 
 
 5.6.5. The item key is the hash of the source ID and the native ID in the hash domain "item key" (see 3.2.5). The hash input is: the size of the source ID as a 4-byte unsigned integer (little-endian), the source ID, the size of the native ID as a 4-byte unsigned integer (little-endian), and the native ID. The sizes make the input unambiguous.
 
-5.6.6. Object IDs, item keys, and content hashes use different hash domains (see 3.2.5).
+5.6.6. Object IDs, item keys, content hashes, and source IDs use different hash domains (see 3.2.5).
 
 ### 5.7. Item map (cache)
 
@@ -805,6 +806,7 @@ A.2.2. The domain keys (see 3.2.5):
 | Object ID | `7a5a3c46561ae064a4d4b3451e3da054f24dec4aabca9289bbd86ac9d2272202` |
 | Item key | `0c715b92de06677df044d97ee6d42629fbb18f268799e59f5b444da951e07dc1` |
 | Content hash | `a4190220377899bde0d628774ca52f067303395c2c18784c9bb99cbd9a964cb8` |
+| Source ID | `3005b889ce6b6494d6d31c5e9bdb7fb5eade93a6136cdb2cdb31b7a597b56679` |
 
 ### A.3. Object IDs
 
@@ -829,6 +831,14 @@ A.4.1. The hash input is the size of the source ID, the source ID, the size of t
 | `gmail` | `msg-1` | `5bedc3e15a00253238b061e48e4f2323246e8941c2d9fec30c59fd706353814d` |
 
 A.4.2. The first two rows show that moving a byte from one part to the other changes the item key.
+
+A.4.2. Source IDs. The hash input is the name as UTF-8 text (see 5.4.5.1). The source ID is the first 16 bytes of the hash. The dedup key is the one of A.2.1.
+
+| Name | Hash (32 bytes) | Source ID |
+|---|---|---|
+| `photos` | `c291ee539b980f55d910158694c8ba957095aadf8c3997b8d91cc5ae02a1ffca` | `c291ee539b980f55d910158694c8ba95` |
+| `/home/user/Pictures` | `4bd83e66b78ec3f4589f4029a05e04bd13370fdf7ec6ca4d2d1c6a29e1a4a1ee` | `4bd83e66b78ec3f4589f4029a05e04bd` |
+| `a` | `0f33fcc7737c26dfb45e860b49d7c57d4130da927a1294481862927bd69c3d2a` | `0f33fcc7737c26dfb45e860b49d7c57d` |
 
 ### A.5. Content hash
 

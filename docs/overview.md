@@ -99,13 +99,14 @@ flowchart LR
 
 Every object has an **object ID**: a keyed BLAKE3 hash of its type and its stored bytes. Because the ID does not depend on the random encryption nonce, the same object has the same ID in every replica. That is what makes deduplication and repair from another copy work.
 
-NilPerit makes three kinds of keyed hash, each in its own **hash domain** with its own key, derived from the dedup key:
+NilPerit makes four kinds of keyed hash, each in its own **hash domain** with its own key, derived from the dedup key:
 
 | Hash domain | Hashes | Used for |
 |---|---|---|
 | Object ID | type ID + stored bytes | Identifying every object |
 | Item key | source ID + native ID | Keys in the trees, so the node never sees a message ID or a file path |
 | Content hash | the full plaintext of a content | Checking a whole file after reassembly |
+| Source ID | the name of a source | Finding the journal of a source again, without any stored state |
 
 Because the domain keys differ, a value of one kind can never equal a value of another kind, whatever the input.
 
