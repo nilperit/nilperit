@@ -26,3 +26,7 @@ $RECYCLE.BIN/
 
 # --- Rust ---
 /target
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/corpus/
+/fuzz/coverage/
