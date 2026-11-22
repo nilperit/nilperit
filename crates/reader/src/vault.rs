@@ -1,13 +1,14 @@
 //! Opening a vault: choosing the vault config (format.md 7.2.6).
 
+use crate::keys::Keys;
 use crate::layout::{CONFIG_A, CONFIG_B};
-use crate::pack::{Pack, PackOpenError};
+use crate::pack::{ObjectReadError, Pack, PackOpenError};
 use crate::target::{Target, TargetError};
 use alloc::vec::Vec;
 use core::fmt;
 use nilperit_crypto::seal::KEM_NAME;
-use nilperit_crypto::{ReadKey, RootSeed, WriterKey, verify_config_mac};
-use nilperit_format::{ObjectError, PackName, VaultConfig, split_config_file};
+use nilperit_crypto::{RootSeed, WriterKey, verify_config_mac};
+use nilperit_format::{ObjectError, ObjectId, PackName, VaultConfig, split_config_file};
 
 /// A vault could not be opened.
 #[derive(Debug)]
@@ -48,19 +49,10 @@ impl From<TargetError> for VaultError {
     }
 }
 
-/// The keys that a reader with the recovery phrase has.
-struct Keys {
-    writer: WriterKey,
-    // Used to open the seal of packs.
-    #[allow(dead_code)]
-    read: ReadKey,
-}
-
 /// An open vault: a target, its vault config, and the keys to read it.
 pub struct Vault<T> {
     target: T,
     config: VaultConfig,
-    #[allow(dead_code)]
     keys: Keys,
 }
 
@@ -70,15 +62,12 @@ impl<T: Target> Vault<T> {
     /// It chooses the vault config as format.md 7.2.6 says and checks that the
     /// config belongs to the root seed.
     pub async fn open(target: T, seed: &RootSeed) -> Result<Self, VaultError> {
-        let keys = Keys {
-            writer: seed.writer_key(),
-            read: seed.read_key(),
-        };
-        let config = choose_config(&target, &keys.writer).await?;
+        let keys = Keys::from_seed(seed);
+        let config = choose_config(&target, keys.writer()).await?;
         if config.essentials.key_encapsulation != KEM_NAME {
             return Err(VaultError::UnknownAlgorithm);
         }
-        if config.essentials.read_public_key[..] != keys.read.public_key().to_bytes()[..] {
+        if config.essentials.read_public_key[..] != keys.read().public_key().to_bytes()[..] {
             return Err(VaultError::ChangedConfig);
         }
         Ok(Self {
@@ -90,7 +79,17 @@ impl<T: Target> Vault<T> {
 
     /// Opens a pack of the vault (format.md 6.7.5, steps 1 to 4).
     pub async fn open_pack(&self, name: PackName) -> Result<Pack, PackOpenError> {
-        Pack::open(&self.target, name, &self.keys.writer).await
+        Pack::open(&self.target, name, self.keys.writer()).await
+    }
+
+    /// Reads an object of a pack and returns its stored bytes (format.md 6.7.5,
+    /// step 5).
+    pub async fn read_object(
+        &self,
+        pack: &Pack,
+        id: &ObjectId,
+    ) -> Result<Vec<u8>, ObjectReadError> {
+        pack.read_object(&self.target, id, &self.keys).await
     }
 
     /// The vault config that the reader uses.
