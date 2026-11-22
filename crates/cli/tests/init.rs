@@ -1,97 +1,16 @@
 //! `nilperit init`, run in the process and as a program.
 
+mod common;
+
+use common::{Outcome, TempDir, block_on, env, nilperit, phrase, vault_id};
+use nilperit_cli::Environment;
 use nilperit_cli::credential::load_credential;
-use nilperit_cli::{Environment, run};
 use nilperit_crypto::RootSeed;
 use nilperit_reader::Vault;
 use nilperit_target_fs::FsTarget;
 use std::fs;
-use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::pin;
 use std::process::ExitCode;
-use std::task::{Context, Poll, Waker};
-
-fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = pin!(future);
-    match future
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    {
-        Poll::Ready(value) => value,
-        Poll::Pending => panic!("the future waits"),
-    }
-}
-
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(name: &str) -> Self {
-        let path = std::env::temp_dir().join(format!("nilperit-cli-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-struct Outcome {
-    code: ExitCode,
-    out: String,
-    err: String,
-}
-
-/// Runs the program in the process, with real randomness.
-fn nilperit(args: &[&str], env: &Environment) -> Outcome {
-    let mut out = Vec::new();
-    let mut err = Vec::new();
-    let mut rng = rand_core::UnwrapErr(getrandom::SysRng);
-    let code = run(
-        std::iter::once("nilperit").chain(args.iter().copied()),
-        env,
-        &mut out,
-        &mut err,
-        &mut rng,
-    );
-    Outcome {
-        code,
-        out: String::from_utf8(out).unwrap(),
-        err: String::from_utf8(err).unwrap(),
-    }
-}
-
-fn env(dir: &TempDir) -> Environment {
-    Environment {
-        config_dir: Some(dir.0.join("config")),
-        credential: None,
-    }
-}
-
-/// The 24 words that the program showed, in order.
-fn phrase(out: &str) -> String {
-    let words: Vec<&str> = out
-        .lines()
-        .filter(|line| line.trim_start().starts_with(|c: char| c.is_ascii_digit()))
-        .flat_map(|line| {
-            line.split_whitespace()
-                .filter(|w| !w.chars().all(|c| c.is_ascii_digit()))
-        })
-        .collect();
-    assert_eq!(words.len(), 24, "{out}");
-    words.join(" ")
-}
-
-fn vault_id(out: &str) -> String {
-    out.lines()
-        .find_map(|l| l.strip_prefix("Vault ID: "))
-        .unwrap()
-        .to_string()
-}
 
 fn success(outcome: &Outcome) -> bool {
     outcome.code == ExitCode::SUCCESS

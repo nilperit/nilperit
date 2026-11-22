@@ -22,6 +22,7 @@ nilperit-crypto.workspace = true
 nilperit-reader.workspace = true
 nilperit-writer.workspace = true
 nilperit-target-fs.workspace = true
+nilperit-connector-fs.workspace = true
 clap = { version = "4", default-features = false, features = ["std", "help", "usage", "error-context", "derive"] }
 getrandom = { version = "0.4", default-features = false, features = ["sys_rng"] }
 rand_core = { version = "0.10", default-features = false }
