@@ -40,6 +40,8 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.1.2. NilPerit MUST show the root seed to the person as a recovery phrase of 24 words. The word list and the encoding are BIP39 (English word list).
 
+3.1.2.1. NilPerit uses BIP39 only for the mapping between the 32 bytes and the 24 words, including the checksum. It does not use a BIP39 passphrase. It does not use the BIP39 seed derivation (PBKDF2). The root seed is the 32 bytes that the 24 words encode. A reader MUST check the checksum of the words.
+
 3.1.3. NilPerit MUST NOT store the root seed in a vault in plaintext.
 
 3.1.4. A vault MAY contain a copy of the root seed that is encrypted with a passphrase (Argon2id). NilPerit MUST NOT write this copy to a target that a third party controls.
@@ -48,13 +50,13 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.2.1. NilPerit derives all keys from the root seed. Each key has its own context string (domain separation).
 
-3.2.2. Key derivation function: BLAKE3 `derive_key` mode. TBD: final choice, and the context strings of the keys other than the domain keys (see 3.2.5) and the pack keys (see 3.3.3).
+3.2.2. Key derivation function: BLAKE3 `derive_key` mode. The context strings are in 3.2.5, 3.2.9, 3.3.2.2, 3.3.3, 3.3.7, and 3.3.8.
 
 3.2.3. The derived keys are:
 
 | Key | Type | Holder | Purpose |
 |---|---|---|---|
-| Read key | Hybrid X25519 + ML-KEM-768 key pair | Owner (private part) | Opens item records and chunks |
+| Read key | X-Wing key pair (X25519 + ML-KEM-768) | Owner (private part) | Opens item records and chunks |
 | Dedup key | 32-byte key | Node | Source of the domain keys (see 3.2.5) |
 | Writer key | 32-byte symmetric key | Node | Encrypts objects that the node reads again |
 | Chunker seed | 32 bytes | Node | Selects chunk cut points |
@@ -75,6 +77,17 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.2.8. A context string has the form: application, date, purpose. This is the convention of BLAKE3 for `derive_key`. The date has no meaning. It is not a version. Only the uniqueness of the string matters.
 
+3.2.9. **Keys from the root seed.** NilPerit derives each of these keys with BLAKE3 `derive_key`. The key material is the root seed. Each key is 32 bytes:
+
+| Key | Context string |
+|---|---|
+| Dedup key | `nilperit 2026-11-22 dedup-key` |
+| Writer key | `nilperit 2026-11-22 writer-key` |
+| Chunker seed | `nilperit 2026-11-22 chunker-seed` |
+| Read key | `nilperit 2026-11-22 read-key` |
+
+3.2.9.1. The 32 bytes of the read key are the decapsulation key of X-Wing (see 3.3.2.1). The public part of the read key is the encapsulation key that X-Wing makes from it.
+
 ### 3.3. Encryption
 
 3.3.1. Each object has a key class. There are two key classes:
@@ -84,7 +97,24 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | R (read) | Chunks, item records | Only the holder of the read key |
 | W (writer) | Content objects, journal entries, checkpoint trees, archive trees, item map nodes, archive map nodes, object tables, snapshot headers, condemnation records, index segments | The node and the owner |
 
-3.3.2. For R objects, each pack has a random 32-byte pack key. NilPerit MUST seal the pack key to the public part of the read key. The seal uses a hybrid KEM: X25519 and ML-KEM-768 together. A reader needs both secrets to open the seal. TBD: exact combiner construction (candidate: X-Wing). The seal is an opaque byte string, and its size is in the trailer of the pack (see 6.7.3). The layout of a pack does not depend on the construction of the seal.
+3.3.2. For R objects, each pack has a random 32-byte pack key. NilPerit MUST seal the pack key to the public part of the read key. The seal uses a hybrid KEM that combines X25519 and ML-KEM-768. A reader needs both secrets to open the seal.
+
+3.3.2.1. **KEM.** The key encapsulation algorithm is X-Wing, as in version 06 of the Internet-Draft draft-connolly-cfrg-xwing-kem. Its name in a pack header and in the vault config is `x-wing-draft-06`. The read key (see 3.2.9) is the decapsulation key. The public part of the read key is 1216 bytes. An encapsulation gives a ciphertext of 1120 bytes and a shared secret of 32 bytes.
+
+3.3.2.2. **Sealing.** A writer seals a pack key as follows:
+
+1. It encapsulates to the public part of the read key. This gives a shared secret and a ciphertext.
+2. It derives the seal key. This is BLAKE3 `derive_key` with the context string `nilperit 2026-11-22 pack-seal` and the shared secret as key material. The seal key is 32 bytes.
+3. It encrypts the pack key (32 bytes) with XChaCha20-Poly1305. The key is the seal key. The nonce is 24 random bytes. The associated data is the BLAKE3 hash of the header of the pack (see 6.7.3.4).
+4. The seal is: the ciphertext of the encapsulation (1120 bytes), the nonce (24 bytes), the encrypted pack key (32 bytes), and the tag (16 bytes). It is 1192 bytes.
+
+3.3.2.3. **Opening.** A reader MUST reject a pack whose key encapsulation name is not `x-wing-draft-06`. It MUST reject a seal that is not 1192 bytes. It decapsulates the ciphertext with the read key, derives the seal key in the same way, and decrypts. It MUST reject the seal when the tag is not correct.
+
+3.3.2.4. The associated data binds the seal to the header of its pack. A changed header makes the seal fail.
+
+3.3.2.5. A node can seal, because it has the public part of the read key. It cannot open a seal, because it does not have the read key.
+
+3.3.2.6. The layout of a pack treats the seal as opaque bytes with a size (see 6.7.3). A later algorithm can have a seal of another size.
 
 3.3.3. For W objects in packs, NilPerit uses two keys. It derives them from the writer key with BLAKE3 `derive_key`. The key material is the writer key. The keys are 32 bytes:
 
@@ -101,9 +131,19 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.3.6. The owner can open objects of both key classes, because all keys derive from the root seed. A party without keys can open neither class.
 
-3.3.7. Snapshot headers, condemnation records, and index segments are files outside packs. Each is one W object, encrypted and authenticated with XChaCha20-Poly1305 and a key that NilPerit derives from the writer key. A reader authenticates them with the AEAD tag.
+3.3.7. Snapshot headers, condemnation records, and index segments are files outside packs. Each is one W object. Its stored bytes are an encoded envelope.
 
-3.3.8. The vault config is plaintext CBOR, because a reader must read the format version and the algorithm IDs before it has keys. It contains no data of the owner. NilPerit MUST authenticate it with a keyed BLAKE3 MAC. The key derives from the writer key. TBD: exact derivation.
+3.3.7.1. The bytes of the file are: a random nonce (24 bytes), the ciphertext, and the tag (16 bytes). The encryption is XChaCha20-Poly1305. The associated data is empty. The key depends on the kind of file. NilPerit derives it from the writer key with BLAKE3 `derive_key`. The key material is the writer key. The keys are 32 bytes:
+
+| Kind of file | Context string |
+|---|---|
+| Snapshot header | `nilperit 2026-11-22 snapshot-header` |
+| Condemnation record | `nilperit 2026-11-22 condemnation-record` |
+| Index segment | `nilperit 2026-11-22 index-segment` |
+
+3.3.7.2. A reader MUST reject a file when the tag is not correct (see 9.4). A reader MUST reject a file of 2^32 bytes or more before it allocates memory for it.
+
+3.3.8. The vault config is plaintext CBOR, because a reader must read the format version and the algorithm names before it has keys. It contains no data of the owner. NilPerit MUST authenticate it with a keyed BLAKE3 MAC (see 7.2). The MAC key is 32 bytes. NilPerit derives it from the writer key with BLAKE3 `derive_key`, with the context string `nilperit 2026-11-22 config-mac` and the writer key as key material. The MAC input is the bytes of the CBOR map. The MAC is 32 bytes.
 
 3.3.9. A node MUST compare the public part of the read key in the vault config with the value in its node credential. When they are different, the node MUST stop. An attacker who changes the config must not make the node seal data to a different key.
 
@@ -179,19 +219,25 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 ### 5.2. Chunking profiles
 
-5.2.1. The vault config contains a table of chunking profiles. Each profile has: ID, algorithm, minimum size, average size, maximum size.
+5.2.1. The vault config contains a table of chunking profiles (see 7.2). Each profile has: ID, algorithm, minimum size, average size, maximum size.
+
+5.2.1.1. The ID is an unsigned integer. The IDs of this draft are 1, 2, and 3. NilPerit does not use the ID 0.
 
 5.2.2. The table is append-only. NilPerit MUST NOT change or remove a profile.
 
 5.2.3. NilPerit selects a profile from the properties of the data (size, media type, connector hint). It MUST NOT select a profile from the source.
 
-5.2.4. Initial profiles (TBD: exact values):
+5.2.4. Initial profiles. These values are for this draft. The sizes are in bytes.
 
-| Name | Use | Average size |
-|---|---|---|
-| small | Data below approximately 64 KiB. No cutting: one chunk. | — |
-| default | Documents, email with attachments, general files | approximately 256 KiB |
-| large | Video, photos, archives | approximately 2–4 MiB |
+| ID | Name | Use | Algorithm | Minimum size | Average size | Maximum size |
+|---|---|---|---|---|---|---|
+| 1 | small | Data of at most 64 KiB. No cutting: one chunk. | `none` | 0 | 0 | 65536 |
+| 2 | default | Documents, email with attachments, general files | `fastcdc-2020` | 65536 | 262144 | 1048576 |
+| 3 | large | Video, photos, archives | `fastcdc-2020` | 524288 | 2097152 | 8388608 |
+
+5.2.4.1. For the algorithm `none`, the minimum size and the average size are 0. The maximum size is the largest size of data that the profile takes as one chunk.
+
+5.2.4.2. TBD: the exact text of the algorithm `fastcdc-2020`, and the way the chunker seed makes its gear table.
 
 ### 5.3. Content object (truth)
 
@@ -393,7 +439,7 @@ This procedure can select an entry that was complete but not committed. That is 
 | 1 | format version | Unsigned integer | The format version of the vault (see 12.1) |
 | 2 | pack class | Unsigned integer | 0 for a data pack, 1 for a metadata pack (see 6.2) |
 | 3 | encryption | Text string | The AEAD algorithm. This draft defines `xchacha20-poly1305`. |
-| 4 | key encapsulation | Text string | The algorithm of the seal. The header has this field only when the pack has a sealed pack key. TBD: the names. |
+| 4 | key encapsulation | Text string | The algorithm of the seal. The header has this field only when the pack has a sealed pack key. This draft defines `x-wing-draft-06` (see 3.3.2.1). |
 | 5 | hash | Text string | The hash algorithm of object IDs and pack names. This draft defines `blake3`. |
 
 6.7.1.3. A reader MUST stop when the format version is higher than the version that it knows (see 9.5). A reader MUST reject a pack with an encryption name or a hash name that it does not know (see 6.6.3).
@@ -498,7 +544,8 @@ This procedure can select an entry that was complete but not committed. That is 
 
 ```
 vault/
-  config            vault config (plaintext, MAC-authenticated; mirrored)
+  config-a          vault config, first copy (plaintext, MAC-authenticated)
+  config-b          vault config, second copy
   FORMAT.md         copy of this specification (docs/format.md)
   schema/           schema dictionary (CDDL)
   recovery/         bundled reader software
@@ -511,7 +558,39 @@ vault/
 
 7.1. FORMAT.md, schema/, and recovery/ are plaintext. They contain no data of the owner.
 
-7.2. The vault config MUST exist in more than one copy (TBD: number and file names).
+7.2. **Vault config.** The vault config is a plaintext file. It contains no data of the owner. The vault has two copies of it, in the root of the vault: `config-a` and `config-b`.
+
+7.2.1. A config file is the bytes of one deterministic CBOR map (see 4.2 and 4.6.2), followed by a MAC of 32 bytes (see 3.3.8). A reader MUST reject a config file of more than 1 MiB.
+
+7.2.2. The map has unsigned integer keys. A reader ignores keys that it does not know (see 4.5). The keys are:
+
+| Key | Field | CBOR type | Meaning |
+|---|---|---|---|
+| 1 | format version | Unsigned integer | The format version of the vault (see 12.1) |
+| 2 | config sequence | Unsigned integer | The number of the version of the config. It is 1 when NilPerit creates the vault, and grows by 1 with each change. |
+| 3 | vault ID | Byte string, 16 bytes | Random bytes that NilPerit makes when it creates the vault. They tell the replicas of one vault apart from other vaults. |
+| 4 | encryption | Text string | The AEAD algorithm, as in the pack header (see 6.7.1.2) |
+| 5 | hash | Text string | The hash algorithm, as in the pack header |
+| 6 | key encapsulation | Text string | The algorithm of the seal (see 3.3.2.1) |
+| 7 | read public key | Byte string | The public part of the read key (see 3.2.9.1). For `x-wing-draft-06` it is 1216 bytes. |
+| 8 | chunking profiles | Array | The table of chunking profiles (see 5.2). Each profile is an array of 5 items: the ID, the algorithm (a text string), the minimum size, the average size, and the maximum size (unsigned integers). |
+
+7.2.3. The table of chunking profiles is append-only (see 5.2.2). A change adds profiles at the end and grows the config sequence by 1.
+
+7.2.4. A reader MUST stop when the format version is higher than the version that it knows (see 9.5). The config is plaintext, so a reader can read the format version and the algorithm names before it has keys. A reader without keys cannot check the MAC. It MUST NOT trust the fields for more than to learn which version and algorithms it needs.
+
+7.2.5. **Writing.** A writer writes both copies for each change. For each copy, it writes the file with a temporary name, syncs it, and then gives it the final name (see 8.1). It writes `config-a` first and `config-b` second. After a crash, the two copies can have different config sequences.
+
+7.2.6. **Reading.** A reader that has the keys reads the vault config as follows:
+
+1. It reads both files. It ignores a file that is missing, that is not deterministic CBOR, or whose MAC is not correct.
+2. It uses the valid file with the highest config sequence.
+3. When two valid files have the same config sequence but different bytes, the reader MUST stop and report a changed vault config.
+4. When no file is valid, the reader MUST stop. Salvage (see 10.7) can rebuild the essential fields from snapshot headers.
+
+7.2.7. The essential fields are the format version, the vault ID, the three algorithm names, and the read public key. Snapshot headers contain a copy of them (see 5.9.1). The chunking profiles are not essential for reading, because only a writer needs them.
+
+7.2.8. The check of the read public key in 3.3.9 and 3.3.9.1 applies to the vault config that the reader uses.
 
 7.3. recovery/ MUST contain a reader for the format version of the vault. TBD: exact contents and file names.
 
@@ -620,12 +699,8 @@ vault/
 
 The items below are not fixed in this draft:
 
-- Key derivation context strings and final KDF choice (3.2.2).
-- Hybrid KEM combiner construction (3.3.2); candidate: X-Wing (X25519 + ML-KEM-768). Also the name of the algorithm in the pack header (6.7.1.2) and the bytes of the seal.
-- ML-KEM implementation (3.3.2): RustCrypto `ml-kem` has never had an independent audit; `libcrux-ml-kem` (formally verified) is the main alternative.
-- Exact values of the chunking profiles (5.2.4).
-- Number and names of vault config copies (7.2).
-- Key derivation for the W keys of files outside packs and for the vault config MAC (3.3.7, 3.3.8).
+- ML-KEM implementation (3.3.2.1): RustCrypto `ml-kem` has never had an independent audit; `libcrux-ml-kem` (formally verified) is the main alternative. Also whether X-Wing is a final standard, and the name of the algorithm then.
+- The exact text of the chunking algorithm `fastcdc-2020` and the derivation of its gear table from the chunker seed (5.2.4.2).
 - Contents and names in recovery/ (7.3).
 - Parity data format (10.4).
 - Fields of a checkpoint other than the connector cursor and the two trees (5.5.3): for example its time, and whether it has a snapshot ID. A checkpoint that compaction writes (11.3.1) does not come from a synchronization.
@@ -719,7 +794,7 @@ A.7.2. A reader MUST decode these seven bytes to the five bytes `68 65 6c 6c 6f`
 
 ### A.8. Pack
 
-A.8.1. A pack with two objects: a chunk (R, DEFLATE) and a content object (W, no compression) that lists the chunk. This is a test of the layout. The seal and the name of the key encapsulation algorithm are placeholders, because the construction of the seal is not decided (see 3.3.2). A real pack has random nonces and a real seal of about 1 KiB.
+A.8.1. A pack with two objects: a chunk (R, DEFLATE) and a content object (W, no compression) that lists the chunk. This is a test of the layout. The seal and the name of the key encapsulation algorithm are placeholders, because the vector has no X-Wing implementation. A real pack has random nonces, a seal of 1192 bytes (see 3.3.2.2), and the name `x-wing-draft-06`.
 
 A.8.2. Inputs, all in hexadecimal:
 
@@ -767,3 +842,43 @@ A.8.5. The pack as one hexadecimal string:
 
 A.8.6. The name of this pack (the BLAKE3 hash of the 408 bytes) is `815dfe4dc31fbd77d535dbb466deb78b72b45ff294e6c32af5d43fdf7ad2288d`.
 
+### A.9. Keys and the vault config
+
+A.9.1. The root seed is the 32 bytes `a0 a1 ... bf`. The recovery phrase of this root seed is (BIP39, English word list):
+
+```
+pass artist pottery enable foil fatigue pencil crystal produce grace hill garage arch sun solution note repeat saddle common install rookie gain wife theme
+```
+
+A.9.2. The keys from the root seed (see 3.2.9):
+
+| Key | Value |
+|---|---|
+| Dedup key | `817539ea4e9be3fb2c37fc4e8772d525e485efa986ddef131fa2791e397c81fb` |
+| Writer key | `602b54db5ed2a3c74b36a568b852de6a126d2dec9b1971ea7c1f3ec4cf422c6c` |
+| Chunker seed | `ae43d7f36553f9e55159aaad739ea9f2070af24ad467a781039ad161107290d5` |
+| Read key | `e943a3cea78674c96b2354ec08caf3064ed001589a3919e75e59a4af2a333b77` |
+
+A.9.3. The keys from the writer key of A.9.2 (see 3.3.3, 3.3.7, and 3.3.8):
+
+| Key | Value |
+|---|---|
+| Config MAC key | `b6de912a5d95d54c54ac2487914b5ab0a3976e70ea126ac390eb1e5569ee953f` |
+| Snapshot header key | `6f5e6da437a1f6651279a3b50bddffada3bcfde1573ba1285b41cba6fd460f61` |
+| Condemnation record key | `0a96deb444a02736cfd2c4a70e0586f1e8c11abad91b0b6ef5a193d1f3bb8777` |
+| Index segment key | `0e2db11232654989fd38827244a634d1ea545f11500c7453c63419997ae7b75f` |
+| Pack object key | `b51b12b1ff96580e7e9faf30f1eacfa111927612515cee94780e4d4fa8a81508` |
+| Pack table key | `ddc557fb4f9ce07ae8c74f25b59982ccad494a32786ac3eb27b83fbfa59834c0` |
+
+A.9.4. A vault config. The read public key is a placeholder of 32 bytes `00 01 ... 1f`, because the vector has no X-Wing implementation. A real read public key is 1216 bytes. The vault ID is 16 bytes of `11`. The config sequence is 1. The chunking profiles are the three profiles of 5.2.4.
+
+| Part | Value |
+|---|---|
+| The CBOR map (179 bytes) | `a80100020103501111111111111111111111111111111104727863686163686132302d706f6c79313330350566626c616b6533066f782d77696e672d64726166742d3036075820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f08838501646e6f6e6500001a0001000085026c666173746364632d323032301a000100001a000400001a0010000085036c666173746364632d323032301a000800001a002000001a00800000` |
+| The MAC (BLAKE3 keyed with the config MAC key, over the map) | `372fab368795b471732a8a118492fbc5f48c34ac333cf0d1548b47e19ae9c828` |
+
+A.9.5. The config file is the map followed by the MAC (211 bytes):
+
+```
+a80100020103501111111111111111111111111111111104727863686163686132302d706f6c79313330350566626c616b6533066f782d77696e672d64726166742d3036075820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f08838501646e6f6e6500001a0001000085026c666173746364632d323032301a000100001a000400001a0010000085036c666173746364632d323032301a000800001a002000001a00800000372fab368795b471732a8a118492fbc5f48c34ac333cf0d1548b47e19ae9c828
+```

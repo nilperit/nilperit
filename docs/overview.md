@@ -65,7 +65,7 @@ flowchart TB
 
 ```
 vault/
-  config            plaintext, with a MAC   format version, algorithms, read public key
+  config-a, config-b  plaintext, with a MAC   two copies: format version, vault ID, algorithms, read public key, chunking profiles
   FORMAT.md         plaintext               copy of format.md
   schema/           plaintext               CDDL schema dictionary
   recovery/         plaintext               bundled reader software

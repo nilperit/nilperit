@@ -62,6 +62,9 @@ The algorithm that a writer used to compress an *object* before encryption, as a
 **Condemnation record**
 A record that marks a range of *journal entries* for removal, after *compaction* has replaced it. A condemnation record does not remove data. NilPerit can revoke it until a *sweep* runs.
 
+**Config sequence**
+A number in the *vault config*. It is 1 when NilPerit creates the vault and grows by 1 with each change. A reader uses the valid copy of the vault config with the highest config sequence.
+
 **Connector**
 The code that gets data from one kind of external service or local system, for example Gmail or a local folder.
 
@@ -186,7 +189,7 @@ Optional Reed–Solomon recovery data for a *pack*. With parity data, NilPerit c
 A number that a person gives to a *source*. Priority controls the order of synchronization, *replica* synchronization, and cleanup under storage pressure.
 
 **Read key**
-The hybrid key pair (X25519 and ML-KEM) that opens *objects* of *key class* R. Only the owner has the private part.
+The X-Wing key pair (a hybrid of X25519 and ML-KEM-768) that opens *objects* of *key class* R. NilPerit derives it from the *root seed*. Only the owner has the private part.
 
 **Recovery phrase**
 The *root seed*, written as 24 words. With the recovery phrase and one copy of a *vault*, a person can recover all data in that copy.
@@ -204,7 +207,7 @@ A recovery procedure that scans all readable *packs* and rebuilds as much data a
 A procedure that reads stored data and checks its integrity.
 
 **Seal**
-To encrypt a key so that only the holder of a private key can open it. NilPerit seals each *pack key* to the public part of the *read key* with a hybrid key encapsulation (X25519 and ML-KEM).
+To encrypt a key so that only the holder of a private key can open it. NilPerit seals each *pack key* to the public part of the *read key* with X-Wing, a hybrid key encapsulation (X25519 and ML-KEM-768).
 
 **Sequence number**
 The position of a *journal entry* in its *journal*: the sequence number of its parent plus one.
@@ -247,6 +250,9 @@ The complete stored data of one NilPerit installation on one *target*.
 
 **Vault config**
 The object that contains the format version, the vault ID, the public part of the *read key*, and the table of *chunking profiles*.
+
+**Vault ID**
+16 random bytes in the *vault config*. They tell the *replicas* of one *vault* apart from other vaults.
 
 **Writer key**
 A symmetric key that opens *objects* of *key class* W. The *node* uses it for objects that it must read again, for example *journal entries*, *content objects*, trees, and *object tables*.
