@@ -9,7 +9,7 @@ ADR 0004 and ADR 0012 chose the key hierarchy and a hybrid post-quantum seal, bu
 
 ## Decision
 
-- **Four keys from the root seed**, each with BLAKE3 `derive_key` and its own context string: the dedup key, the writer key, the chunker seed, and the read key. The 32 bytes of the read key are the X-Wing decapsulation key.
+- **Three keys from the root seed**, each with BLAKE3 `derive_key` and its own context string: the dedup key, the writer key, and the read key. The 32 bytes of the read key are the X-Wing decapsulation key.
 - **BIP39 only maps bytes to words.** The recovery phrase is the BIP39 encoding of the 32 bytes. We do not use a BIP39 passphrase or the BIP39 seed derivation. The root seed stays the same 32 bytes, with no hidden extra input to remember.
 - **X-Wing (draft 06) is the KEM.** The algorithm name in the vault is `x-wing-draft-06`, so a later final standard gets a new name. Implementation: the `x-wing` crate. It has not been independently audited (see `docs/pre-v1.md`).
 - **The seal is a simple KEM-DEM.** Encapsulate to the public read key, derive a seal key from the shared secret with `derive_key`, and encrypt the 32-byte pack key with XChaCha20-Poly1305. The associated data is the hash of the pack header, so the seal belongs to one pack. The seal is 1192 bytes.
@@ -20,7 +20,7 @@ ADR 0004 and ADR 0012 chose the key hierarchy and a hybrid post-quantum seal, bu
 ## Consequences
 
 - Everything derives from 24 words, with no other secret to store.
-- A node holds the dedup key, the writer key and the chunker seed and can write and seal. It cannot open the seal.
+- A node holds the dedup key and the writer key and can write and seal. It cannot open the seal.
 - A crash while updating the config leaves two valid copies that differ by one sequence. The reader picks the newer one.
 - An attacker who can replace both config copies with an older valid pair cannot be detected from the files alone. A node can keep the highest sequence it has seen (see `docs/pre-v1.md`).
 - The seal construction is simple but new. It needs a review by someone with cryptography expertise before format version 1 (see `docs/pre-v1.md`).

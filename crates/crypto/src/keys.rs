@@ -23,7 +23,6 @@ pub const PHRASE_WORDS: usize = 24;
 // of the format: changing one changes every key that derives with it.
 const CTX_DEDUP_KEY: &str = "nilperit 2026-11-22 dedup-key";
 const CTX_WRITER_KEY: &str = "nilperit 2026-11-22 writer-key";
-const CTX_CHUNKER_SEED: &str = "nilperit 2026-11-22 chunker-seed";
 const CTX_READ_KEY: &str = "nilperit 2026-11-22 read-key";
 const CTX_PACK_OBJECT: &str = "nilperit 2026-11-22 pack-object";
 const CTX_PACK_TABLE: &str = "nilperit 2026-11-22 pack-table";
@@ -78,11 +77,6 @@ secret_key!(
 secret_key!(
     /// The writer key (format.md 3.2.3). The node has it.
     WriterKey
-);
-
-secret_key!(
-    /// The chunker seed (format.md 3.2.3). The node has it.
-    ChunkerSeed
 );
 
 secret_key!(
@@ -169,11 +163,6 @@ impl RootSeed {
     /// The writer key (format.md 3.2.9).
     pub fn writer_key(&self) -> WriterKey {
         WriterKey(blake3::derive_key(CTX_WRITER_KEY, &self.0))
-    }
-
-    /// The chunker seed (format.md 3.2.9).
-    pub fn chunker_seed(&self) -> ChunkerSeed {
-        ChunkerSeed(blake3::derive_key(CTX_CHUNKER_SEED, &self.0))
     }
 
     /// The read key (format.md 3.2.9).
@@ -289,7 +278,6 @@ mod tests {
         let keys = [
             root.dedup_key().as_bytes().to_vec(),
             writer.as_bytes().to_vec(),
-            root.chunker_seed().as_bytes().to_vec(),
             root.read_key().as_bytes().to_vec(),
             writer.pack_object_key().as_bytes().to_vec(),
             writer.pack_table_key().as_bytes().to_vec(),
@@ -311,7 +299,6 @@ mod tests {
         for shown in [
             format!("{root:?}"),
             format!("{:?}", root.writer_key()),
-            format!("{:?}", root.chunker_seed()),
             format!("{:?}", root.writer_key().pack_object_key()),
             format!("{:?}", root.writer_key().config_mac_key()),
             format!("{:?}", root.read_key()),

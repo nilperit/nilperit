@@ -259,9 +259,9 @@ mod tests {
     fn profile(id: u32) -> ChunkingProfile {
         ChunkingProfile {
             id,
-            algorithm: String::from("fastcdc-2020"),
-            min_size: 1,
-            avg_size: 2,
+            algorithm: String::from("fixed"),
+            min_size: 0,
+            avg_size: 0,
             max_size: 3,
         }
     }

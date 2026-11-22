@@ -23,7 +23,7 @@ mod test_rng;
 
 pub use aead::{AeadError, decrypt, encrypt};
 pub use hash::{ContentHasher, DedupKey, DomainKey, DomainKeys, HASH_LEN, HashDomain, SizeError};
-pub use keys::{AeadKey, ChunkerSeed, MacKey, PhraseError, RootSeed, WriterKey};
+pub use keys::{AeadKey, MacKey, PhraseError, RootSeed, WriterKey};
 pub use mac::{config_mac, verify_config_mac};
 pub use seal::{ReadKey, ReadPublicKey, SealError, open_seal, seal_pack_key};
 pub use x_wing::CryptoRng;

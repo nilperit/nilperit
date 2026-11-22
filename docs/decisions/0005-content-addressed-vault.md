@@ -9,10 +9,10 @@ Deletions at the source must not purge the backup, but storing every edit as a f
 
 ## Decision
 
-- The vault is a **content-addressed chunk store**. Content is cut with FastCDC; each chunk is identified by a keyed BLAKE3 hash of its plaintext, then optionally compressed (see ADR 0016) and encrypted.
+- The vault is a **content-addressed chunk store**. Content is cut by the chunking algorithm of its profile; each chunk is identified by a keyed BLAKE3 hash of its plaintext, then optionally compressed (see ADR 0016) and encrypted.
 - Chunk size is **not global**. The vault config holds an append-only table of **chunking profiles** (algorithm, min/avg/max). Each content object records its profile. The node chooses a profile from what the data *is* (size, media type, connector hint), never from which source it came from, so identical bytes from different sources still deduplicate.
-- Initial profiles: *small* (no cutting, below about 64 KiB), *default* (about 256 KiB average), *large* (about 2–4 MiB average).
-- The **chunker seed** is secret and fixed per vault, so chunk-size patterns cannot fingerprint known files.
+- The first and only algorithm is `fixed`: chunks of one size, and a shorter last chunk. Initial profiles: *default* (256 KiB) and *large* (2 MiB). Content up to one chunk is one chunk, so small items such as email are not cut.
+- We chose `fixed` and not a content-defined algorithm such as FastCDC. Appends and changes in place deduplicate with fixed chunks. Only bytes that move gain from content-defined cutting, for example an attachment at different offsets in different emails, or a tag at the top of a media file. We do not know yet how much that saves. The chunk boundaries are not visible in a pack (the object table is encrypted and objects have no markers), but a content-defined algorithm with a public table would let someone who sees range reads test for known files. When we add one, its table must come from a secret key that derives from the root seed (`docs/pre-v1.md`).
 
 ## Consequences
 

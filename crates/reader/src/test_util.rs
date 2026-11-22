@@ -226,10 +226,10 @@ pub fn config(seed: &RootSeed, sequence: u64, vault_id: u8) -> VaultConfig {
         sequence,
         chunking_profiles: alloc::vec![ChunkingProfile {
             id: 1,
-            algorithm: "fastcdc-2020".to_string(),
-            min_size: 65536,
-            avg_size: 262_144,
-            max_size: 1_048_576,
+            algorithm: "fixed".to_string(),
+            min_size: 0,
+            avg_size: 0,
+            max_size: 262_144,
         }],
     }
 }
