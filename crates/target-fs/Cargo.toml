@@ -1,0 +1,22 @@
+[package]
+name = "nilperit-target-fs"
+description = "A NilPerit target on a local file system"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+nilperit-reader.workspace = true
+nilperit-writer.workspace = true
+
+[dev-dependencies]
+nilperit-format.workspace = true
+nilperit-crypto.workspace = true
+# Only for the random number generator of the tests.
+x-wing = { version = "0.1.1", default-features = false, features = ["zeroize"] }
+
+[lints]
+workspace = true
