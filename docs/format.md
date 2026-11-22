@@ -48,7 +48,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.2.1. NilPerit derives all keys from the root seed. Each key has its own context string (domain separation).
 
-3.2.2. Key derivation function: BLAKE3 `derive_key` mode. TBD: final choice, and the context strings of the keys other than the domain keys (see 3.2.5).
+3.2.2. Key derivation function: BLAKE3 `derive_key` mode. TBD: final choice, and the context strings of the keys other than the domain keys (see 3.2.5) and the pack keys (see 3.3.3).
 
 3.2.3. The derived keys are:
 
@@ -84,13 +84,20 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | R (read) | Chunks, item records | Only the holder of the read key |
 | W (writer) | Content objects, journal entries, checkpoint trees, archive trees, item map nodes, archive map nodes, object tables, snapshot headers, condemnation records, index segments | The node and the owner |
 
-3.3.2. For R objects, each pack has a random 32-byte pack key. NilPerit MUST seal the pack key to the public part of the read key. The seal uses a hybrid KEM: X25519 and ML-KEM-768 together. A reader needs both secrets to open the seal. TBD: exact combiner construction (candidate: X-Wing).
+3.3.2. For R objects, each pack has a random 32-byte pack key. NilPerit MUST seal the pack key to the public part of the read key. The seal uses a hybrid KEM: X25519 and ML-KEM-768 together. A reader needs both secrets to open the seal. TBD: exact combiner construction (candidate: X-Wing). The seal is an opaque byte string, and its size is in the trailer of the pack (see 6.7.3). The layout of a pack does not depend on the construction of the seal.
 
-3.3.3. For W objects, NilPerit encrypts with a key that it derives from the writer key. TBD: per-pack derivation.
+3.3.3. For W objects in packs, NilPerit uses two keys. It derives them from the writer key with BLAKE3 `derive_key`. The key material is the writer key. The keys are 32 bytes:
+
+| Key | Context string | Use |
+|---|---|---|
+| Pack object key | `nilperit 2026-11-22 pack-object` | W objects in the body of a pack |
+| Pack table key | `nilperit 2026-11-22 pack-table` | The object table of a pack |
+
+3.3.3.1. The keys do not depend on the pack. The random 24-byte nonces (see 3.3.5) make it safe to encrypt many objects with one key. Different purposes have different keys, so an object of one purpose is never valid for another purpose. Section 3.2.5 explains the form of the context strings.
 
 3.3.4. One pack can contain objects of both key classes. The object table (see 6.3) records the key class of each object.
 
-3.3.5. Object encryption: XChaCha20-Poly1305 (AEAD). Each object has its own random 24-byte nonce.
+3.3.5. Object encryption: XChaCha20-Poly1305 (AEAD). Each object has its own random 24-byte nonce. The associated data of an object in a pack is in 6.7.2.3.
 
 3.3.6. The owner can open objects of both key classes, because all keys derive from the root seed. A party without keys can open neither class.
 
@@ -132,8 +139,11 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 |---|---|---|
 | 1 | Chunk | Raw |
 | 2 | Content object | Enveloped |
+| 3 | Object table | Enveloped |
 
 4.4.4. A raw object has a type ID, but no envelope (see 4.7.2). The type ID is only an input of its object ID. TBD: type IDs of the other object types.
+
+4.4.5. The object table (type ID 3) is not an object in the body of a pack. It is in the trailer and has no object ID (see 6.7.3).
 
 4.5. A decoder MUST ignore map keys that it does not know. This makes a decoder resilient, for example against fields that a later schema version no longer uses. It is not a compatibility mechanism: compatibility comes from the format version and the schema version (see 4.5.1 and section 12).
 
@@ -314,10 +324,10 @@ This procedure can select an entry that was complete but not committed. That is 
 
 | Part | Content |
 |---|---|
-| Header | Magic bytes, format version, algorithm IDs (TBD: exact layout) |
-| Body | Encrypted objects, one after the other |
-| Trailer | Sealed pack key (only when the pack contains R objects); object table |
-| Footer | Trailer offset and size |
+| Header | Magic bytes, header size, and a CBOR map with the format version, the pack class, and the algorithm names (see 6.7.1) |
+| Body | Packed objects, one after the other (see 6.7.2) |
+| Trailer | The sealed pack key (only when the pack contains R objects) and the object table (see 6.7.3) |
+| Footer | A record of 24 bytes at the end of the file (see 6.7.4) |
 
 6.3.1. The object table lists each object in the pack. For each object, it gives:
 
@@ -325,9 +335,9 @@ This procedure can select an entry that was complete but not committed. That is 
 |---|---|
 | object ID | The object ID (see 4.7) |
 | object type | The type ID (see 4.4.3) |
-| key class | R or W (see 3.3.1) |
-| offset | The position of the object in the body of the pack |
-| packed size | The number of bytes that the object uses in the body of the pack, after compression and encryption |
+| key class | "R" or "W", as a text string (see 3.3.1) |
+| offset | The position of the first byte of the packed object, counted from the start of the pack file |
+| packed size | The size of the packed object in bytes (see 6.7.2): the nonce, the encrypted bytes, and the tag |
 | compression | The name of the compression algorithm, as a text string (see 6.6) |
 | unpacked size | The size of the stored bytes of the object (see 4.7.2), in bytes. This is the size before compression. |
 
@@ -363,6 +373,123 @@ This procedure can select an entry that was complete but not committed. That is 
 6.6.8. A node can write objects that have a correct AEAD tag, because it has the writer key and the public part of the read key. A compromised node can therefore write compressed bytes that an attacker made. A decompressor MUST be safe against such input: it MUST NOT use unsafe code that depends on the input, and it MUST limit its output to the unpacked size (see 6.6.4).
 
 6.6.9. The unpacked size and the packed size allow a reader to report the effect of compression without a read key.
+
+### 6.7. Pack file format
+
+6.7.1. **Header.** A pack starts with the header:
+
+| Part | Size | Content |
+|---|---|---|
+| magic bytes | 8 bytes | `89 4e 50 4b 0d 0a 1a 0a` |
+| header size | 4 bytes | The size of the header map in bytes, as an unsigned integer (little-endian) |
+| header map | The header size | A CBOR map (see 6.7.1.2) |
+
+6.7.1.1. A reader MUST reject a file that does not start with the magic bytes. A reader MUST reject a header size above 65536.
+
+6.7.1.2. The header map is deterministic CBOR (see 4.2 and 4.6.2). It has unsigned integer keys. A reader ignores keys that it does not know (see 4.5). The keys are:
+
+| Key | Field | CBOR type | Meaning |
+|---|---|---|---|
+| 1 | format version | Unsigned integer | The format version of the vault (see 12.1) |
+| 2 | pack class | Unsigned integer | 0 for a data pack, 1 for a metadata pack (see 6.2) |
+| 3 | encryption | Text string | The AEAD algorithm. This draft defines `xchacha20-poly1305`. |
+| 4 | key encapsulation | Text string | The algorithm of the seal. The header has this field only when the pack has a sealed pack key. TBD: the names. |
+| 5 | hash | Text string | The hash algorithm of object IDs and pack names. This draft defines `blake3`. |
+
+6.7.1.3. A reader MUST stop when the format version is higher than the version that it knows (see 9.5). A reader MUST reject a pack with an encryption name or a hash name that it does not know (see 6.6.3).
+
+6.7.1.4. The header is not encrypted. It contains no data of the owner. The associated data of the object table authenticates it (see 6.7.3.4). The header repeats the algorithm names of the vault config. A reader can therefore read a pack when the vault config is lost (see 10.7).
+
+6.7.2. **Body.** The body starts directly after the header and ends where the trailer starts. It contains the packed objects, one after the other, without gaps. A packed object is:
+
+| Part | Size | Content |
+|---|---|---|
+| nonce | 24 bytes | A random value. A writer makes a new one for each packed object. |
+| ciphertext | The compressed size | The XChaCha20-Poly1305 encryption of the compressed stored bytes (see 6.6.1) |
+| tag | 16 bytes | The AEAD tag |
+
+6.7.2.1. The packed size of an object is 40 bytes more than its compressed size. With the name "none", the compressed size is the unpacked size.
+
+6.7.2.2. NilPerit encrypts an R object with the pack key. It encrypts a W object with the pack object key (see 3.3.3).
+
+6.7.2.3. The associated data of a packed object is the object ID (32 bytes), followed by the type ID as 4 bytes (little-endian). A packed object is therefore only valid for the object ID and the type ID of its entry in the object table. When an attacker moves it to another entry, the tag check fails. A reader MUST check the tag before it decompresses the bytes (see 6.6.4).
+
+6.7.2.4. A writer MUST NOT use the same nonce twice with the same key.
+
+6.7.3. **Trailer.** The trailer follows the body:
+
+| Part | Size | Content |
+|---|---|---|
+| seal size | 4 bytes | The size of the sealed pack key in bytes, as an unsigned integer (little-endian) |
+| sealed pack key | The seal size | The pack key, sealed to the public part of the read key (see 3.3.2). The format treats it as opaque bytes. |
+| object table | The rest of the trailer | A packed object (see 6.7.2) |
+
+6.7.3.1. The seal size is 0 when the pack has no R objects. The seal size MUST NOT be above 65536. A reader MUST reject a pack that has an R object and a seal size of 0.
+
+6.7.3.2. The plaintext of the object table is an encoded envelope (see 4.4) with type ID 3, schema version 1, and a body with one field: key 1, an array of entries. The object table is encrypted with the pack table key (see 3.3.3). It is not an object in the body of a pack. It has no object ID.
+
+6.7.3.3. Each entry is an array of 7 items, in this order:
+
+| Position | Field | CBOR type |
+|---|---|---|
+| 1 | object ID | Byte string, 32 bytes |
+| 2 | object type | Unsigned integer, below 2^32 |
+| 3 | key class | Text string, "R" or "W" |
+| 4 | offset | Unsigned integer |
+| 5 | packed size | Unsigned integer |
+| 6 | compression | Text string (see 6.6.2) |
+| 7 | unpacked size | Unsigned integer |
+
+6.7.3.4. The associated data of the object table is the BLAKE3 hash of the header: all bytes from the start of the pack up to the end of the header map. The hash is 32 bytes. This authenticates the header.
+
+6.7.3.5. The entries are in the order of the body. A reader MUST reject the pack when:
+
+- the offset of the first entry is not the end of the header;
+- the offset of another entry is not the offset of the entry before it plus the packed size of that entry;
+- the last packed object does not end where the trailer starts;
+- an object ID occurs more than once;
+- a key class is not "R" or "W";
+- a packed size is below 40;
+- a size is above a limit of 6.7.6.
+
+6.7.4. **Footer.** The last 24 bytes of a pack are the footer:
+
+| Part | Size | Content |
+|---|---|---|
+| trailer offset | 8 bytes | The position of the first byte of the trailer, counted from the start of the file. An unsigned integer (little-endian). |
+| trailer size | 4 bytes | The size of the trailer in bytes. An unsigned integer (little-endian). |
+| format version | 4 bytes | The format version, as in the header. An unsigned integer (little-endian). |
+| end magic | 8 bytes | `4e 50 4b 2d 45 4e 44 0a` (the ASCII text "NPK-END" and a line feed) |
+
+6.7.4.1. A reader MUST reject a pack when: the end magic is not correct; the trailer offset plus the trailer size plus 24 is not the size of the file; the trailer offset is before the end of the header; or the format version of the footer is not the format version of the header.
+
+6.7.4.2. With the footer, a reader finds the trailer with one read of the end of the file. It needs no other information.
+
+6.7.5. **Reading a pack.** A reader reads a pack as follows:
+
+1. It reads the footer and checks it (see 6.7.4.1).
+2. It reads the trailer.
+3. It reads the header and checks it (see 6.7.1).
+4. It decrypts the object table with the pack table key and the associated data of 6.7.3.4. It rejects the pack when the tag is not correct. It decodes the envelope and the entries, and checks them (see 6.7.3.5).
+5. For each object that it needs, it reads the packed object (a read of the range that its entry gives), checks the tag, decompresses the bytes, and checks the object ID (see 6.7.2 and 6.6.4).
+
+6.7.6. **Limits.** A reader MUST check these limits before it allocates memory for the data:
+
+| Item | Limit |
+|---|---|
+| Header size | At most 65536 bytes |
+| Seal size | At most 65536 bytes |
+| Trailer size | At most 2^28 bytes (256 MiB) |
+| Packed size of an object | Below 2^32 bytes (4 GiB) |
+| Unpacked size of an object | Below 2^32 bytes (4 GiB) |
+
+6.7.6.1. Offsets in the object table and in the footer are 64-bit values. A pack can be larger than 4 GiB.
+
+6.7.6.2. The limits do not limit the size of a file, of a vault, or the number of packs. NilPerit cuts content into chunks (see 5.1) and a pack holds many objects. The limits only reject sizes that no writer makes.
+
+6.7.6.3. A reader MAY apply lower limits when it has little memory, for example in a browser. It then reports that an object is too large for this reader. This is not an error of the format.
+
+6.7.7. **Damage.** The pack is the unit of damage. When a byte of a pack is damaged, the hash of the file no longer agrees with the name (see 9.2). When the trailer or the footer is damaged, a reader cannot read any object of the pack, because the object table and the sealed pack key are in the trailer. NilPerit repairs a pack from another replica or from parity data (see 10.3 and 10.4).
 
 ## 7. Vault layout
 
@@ -484,17 +611,16 @@ vault/
 
 12.4. When NilPerit upgrades a vault, it MUST write the reader software for the new format version in the same commit (see 7.3).
 
+12.5. All drafts of this specification use format version 0. Until format version 1, the format can change without a change of this number.
+
 ## 13. Open items
 
 The items below are not fixed in this draft:
 
 - Key derivation context strings and final KDF choice (3.2.2).
-- Hybrid KEM combiner construction (3.3.2); candidate: X-Wing (X25519 + ML-KEM-768).
+- Hybrid KEM combiner construction (3.3.2); candidate: X-Wing (X25519 + ML-KEM-768). Also the name of the algorithm in the pack header (6.7.1.2) and the bytes of the seal.
 - ML-KEM implementation (3.3.2): RustCrypto `ml-kem` has never had an independent audit; `libcrux-ml-kem` (formally verified) is the main alternative.
-- Per-pack derivation of the W key (3.3.3).
-- Exact encoding of the object table (6.3.1). The compression field is a text string, so the object table is CBOR.
 - Exact values of the chunking profiles (5.2.4).
-- Pack header layout and magic bytes (6.3).
 - Number and names of vault config copies (7.2).
 - Key derivation for the W keys of files outside packs and for the vault config MAC (3.3.7, 3.3.8).
 - Contents and names in recovery/ (7.3).
@@ -587,3 +713,54 @@ cb 48 cd c9 c9 07 00
 ```
 
 A.7.2. A reader MUST decode these seven bytes to the five bytes `68 65 6c 6c 6f`. Different encoders make different streams for the same input. A reader MUST accept every valid DEFLATE stream.
+
+### A.8. Pack
+
+A.8.1. A pack with two objects: a chunk (R, DEFLATE) and a content object (W, no compression) that lists the chunk. This is a test of the layout. The seal and the name of the key encapsulation algorithm are placeholders, because the construction of the seal is not decided (see 3.3.2). A real pack has random nonces and a real seal of about 1 KiB.
+
+A.8.2. Inputs, all in hexadecimal:
+
+| Item | Value |
+|---|---|
+| Dedup key | The 32 bytes `00 01 ... 1f` (see A.2.1) |
+| Writer key | The 32 bytes `20 21 ... 3f` |
+| Pack key | The 32 bytes `40 41 ... 5f`. A reader that opens the seal gets this key. |
+| Nonce of the chunk | 24 bytes of `01` |
+| Nonce of the content object | 24 bytes of `02` |
+| Nonce of the object table | 24 bytes of `03` |
+| Seal (placeholder) | `de ad be ef` |
+
+A.8.3. Derived values:
+
+| Item | Value |
+|---|---|
+| Pack object key (see 3.3.3) | `80f42359c8d9d1116b328bc1ff160b156b538c8a70d97e7a172ff6e85acab695` |
+| Pack table key (see 3.3.3) | `3e270c1ce6008461ef7d7d2e9e6227e2a957be88a725a489b01c102567eab5a2` |
+| Chunk | The 5 bytes `hello`. Type ID 1. |
+| Chunk, compressed | `cb48cdc9c90700` (see A.7.1) |
+| Object ID of the chunk | `09c8888470572d682a266f04f412785427dddaa76b540dfaf6d228727e51830e` |
+| Content hash of `hello` | `ba57c82d8e9d4648188e4ef7eac18ec0c841bd7f817d115e1ed84bc0c05cb20e` (see A.5.1) |
+| Content object (stored bytes, 82 bytes) | `a30002010102a40181582009c8888470572d682a266f04f412785427dddaa76b540dfaf6d228727e51830e0205035820ba57c82d8e9d4648188e4ef7eac18ec0c841bd7f817d115e1ed84bc0c05cb20e0401` |
+| Object ID of the content object | `286259555c0bdd521d9b571868bdd3a2f0312c337ece16c43b8d78ffc246a12e` |
+| Header map | Format version 0, pack class 0, encryption `xchacha20-poly1305`, key encapsulation `placeholder`, hash `blake3` |
+| Associated data of the object table (BLAKE3 of the header) | `d71209092db378d52cf1f9427be77e17f9d6b91cc3fa98068912de99feb819ba` |
+| Plaintext of the object table (109 bytes) | `a30003010102a1018287582009c8888470572d682a266f04f412785427dddaa76b540dfaf6d228727e51830e016152183a182f676465666c61746505875820286259555c0bdd521d9b571868bdd3a2f0312c337ece16c43b8d78ffc246a12e0261571869187a646e6f6e651852` |
+
+A.8.4. Layout of the pack (408 bytes):
+
+| Part | Position | Size |
+|---|---|---|
+| Header | 0 | 58 |
+| Packed object: the chunk (type 1, R, deflate) | 58 | 47 |
+| Packed object: the content object (type 2, W, none) | 105 | 122 |
+| Trailer: seal size, seal, packed object table | 227 | 157 |
+| Footer | 384 | 24 |
+
+A.8.5. The pack as one hexadecimal string:
+
+```
+894e504b0d0a1a0a2e000000a50100020003727863686163686132302d706f6c7931333035046b706c616365686f6c6465720566626c616b65330101010101010101010101010101010101010101010101014683820b6bdd17744f45bb9c2275d3d73057e39b980765020202020202020202020202020202020202020202020202c5e12b97bd9e2e7d093d49a7a9c7db234d82f2da194b7b55517ebcb80e3a652036e81578286e7506f30dcfb8a8ea38f7111dd372053a9b7c65a12982437fe67c87390691e4e97a85f48e30a866aa17f9bebfe753881f5c03d706534a1efb54a9fd9a04000000deadbeef030303030303030303030303030303030303030303030303641136128a959b741d53c008bbdf760f87c8ed6499d7ad62b8c483c0e134ba3c269eff66bb08c01ee9baf1a4a9608275c2a7e0e252b52c3bcdb28471056b637fca99bb999c6ff11fdd451bbaba53b9db719e0eb1f81e91603528d27060f14b5036b5818c1144c0fd989adddcc5353d7ab9ab11c81e9e47dc98fba75147e3000000000000009d000000000000004e504b2d454e440a
+```
+
+A.8.6. The name of this pack (the BLAKE3 hash of the 408 bytes) is `815dfe4dc31fbd77d535dbb466deb78b72b45ff294e6c32af5d43fdf7ad2288d`.
+

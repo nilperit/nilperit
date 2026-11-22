@@ -20,6 +20,9 @@ A *cache* that shows each *item* version that a *source* ever had and that *item
 **Archive tree**
 A tree in a *checkpoint* that contains all *item* versions that do not exist at that time but that *item retention* still keeps (old versions and deleted items), with the time first seen and the time last seen. An archive tree is *truth*.
 
+**Associated data**
+Data that an AEAD algorithm authenticates but does not encrypt. For a *packed object*, the associated data is the *object ID* and the type ID. If the associated data is not correct, the *AEAD tag* is not correct.
+
 **Body**
 The CBOR map in an *envelope* that contains the fields of an *object*. The keys are unsigned integers.
 
@@ -158,11 +161,23 @@ A file that is not part of a completed *commit*, for example a *pack* from an in
 **Pack**
 An immutable file that contains many encrypted objects. The name of a pack is the hash of its encrypted bytes. See *data pack* and *metadata pack*.
 
+**Pack footer**
+The last 24 bytes of a *pack*. It gives the position and the size of the *pack trailer* and ends with a fixed end marker.
+
+**Pack header**
+The start of a *pack*: fixed magic bytes, a size, and a CBOR map with the format version, the pack class, and the algorithm names.
+
 **Pack key**
 A random key for the *key class* R *objects* in one *pack*. NilPerit *seals* the pack key to the *read key*.
 
+**Pack trailer**
+The part of a *pack* after the body. It contains the sealed *pack key* (only when the pack has R *objects*) and the *object table*.
+
+**Packed object**
+The bytes that an *object* uses in the body of a *pack*: a random nonce, the encrypted bytes (after compression), and the *AEAD tag*.
+
 **Packed size**
-The number of bytes that an *object* uses in the body of a *pack*, after compression and encryption.
+The size of the *packed object*.
 
 **Parity data**
 Optional Reed–Solomon recovery data for a *pack*. With parity data, NilPerit can repair some damage to the pack without another copy.
