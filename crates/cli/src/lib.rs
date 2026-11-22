@@ -29,7 +29,8 @@ use std::process::ExitCode;
 /// Runs the program with the given arguments (the first is the name of the program).
 ///
 /// Normal output goes to `out`, and messages about problems to `err`. The exit code is
-/// 0 for success, 1 for an error, and 2 for arguments that are not valid.
+/// 0 for success, 1 for an error, 2 for arguments that are not valid, and 3 for a run
+/// that finished but could not read some items (see `nilperit sync`).
 pub fn run<R: CryptoRng>(
     args: impl IntoIterator<Item = impl Into<OsString> + Clone>,
     env: &Environment,
@@ -51,10 +52,13 @@ pub fn run<R: CryptoRng>(
         }
     };
     let result = match cli.command {
-        Command::Init(args) => commands::init::run(&args, env, out, rng),
+        Command::Init(args) => {
+            commands::init::run(&args, env, out, rng).map(|()| ExitCode::SUCCESS)
+        }
+        Command::Sync(args) => commands::sync::run(&args, env, out, rng),
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(e) => {
             let _ = writeln!(err, "error: {e}");
             ExitCode::FAILURE

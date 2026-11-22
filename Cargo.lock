@@ -376,6 +376,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "getrandom",
+ "nilperit-connector-fs",
  "nilperit-crypto",
  "nilperit-format",
  "nilperit-reader",

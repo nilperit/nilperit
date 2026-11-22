@@ -18,6 +18,7 @@ nilperit-crypto = { path = "crates/crypto" }
 nilperit-reader = { path = "crates/reader" }
 nilperit-writer = { path = "crates/writer" }
 nilperit-target-fs = { path = "crates/target-fs" }
+nilperit-connector-fs = { path = "crates/connector-fs" }
 
 [workspace.lints.rust]
 # Allowed only at a single site with a `// SAFETY:` comment (see AGENTS.md).
