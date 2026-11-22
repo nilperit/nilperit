@@ -68,6 +68,9 @@ A *pack* that contains *truth*: *chunks*, *content objects*, *item records*, *jo
 **Dedup key**
 The key for the keyed hash that makes *object IDs* and *item keys*. The *node* has this key.
 
+**Envelope**
+The outer CBOR map of an *object*. It has the object type, the schema version, and the *body*.
+
 **Fork**
 Two *journal entries* with the same parent, where each entry is named by an authenticated *snapshot header* or is an ancestor of such an entry. A fork can only come from two writers or from damage. An *orphan* with the same parent as a committed entry is not a fork.
 
@@ -119,8 +122,14 @@ The reader-only program. It can list, extract, verify, and salvage data. It cann
 **Node**
 A running NilPerit process that gets data from *sources* and writes it to a *vault*.
 
+**Body**
+The CBOR map in an *envelope* that contains the fields of an *object*. The keys are unsigned integers.
+
 **Object**
 One encoded unit of data in a *vault*, for example a *chunk*, a *content object*, an *item record*, a *journal entry*, or a tree node. Each object has an *object ID*, an object type, and a *key class*.
+
+**Stored bytes**
+The exact bytes of an *object* as a writer wrote them: the encoded *envelope*. NilPerit computes the *object ID* from the stored bytes and never from a new encoding.
 
 **Object ID**
 The keyed BLAKE3 hash of the plaintext encoding of an *object*, with the object type as domain separation. The key is the *dedup key*. The same object has the same object ID in all *replicas*.

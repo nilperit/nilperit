@@ -3,12 +3,21 @@
 version = 4
 
 [[package]]
+name = "minicbor"
+version = "2.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7244eafd1e09e7c4e33043881997aa6ab6dffff3ed2cee3395a278980481d6e"
+
+[[package]]
 name = "nilperit-crypto"
 version = "0.0.0"
 
 [[package]]
 name = "nilperit-format"
 version = "0.0.0"
+dependencies = [
+ "minicbor",
+]
 
 [[package]]
 name = "nilperit-reader"
