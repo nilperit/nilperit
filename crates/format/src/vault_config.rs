@@ -184,7 +184,7 @@ impl VaultConfig {
             return Err(ObjectError::Rule("chunking profile ID 0 is not used"));
         }
         ids.sort_unstable();
-        if ids.windows(2).any(|w| w[0] == w[1]) {
+        if ids.windows(2).any(|w| matches!(w, [a, b] if a == b)) {
             return Err(ObjectError::Rule("chunking profile ID occurs twice"));
         }
         // A chunk is an object, and a reader rejects an object above the limit (6.7.6).

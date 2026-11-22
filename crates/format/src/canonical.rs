@@ -113,7 +113,7 @@ pub(crate) fn check_item(buf: &[u8], pos: usize, depth: usize) -> Result<usize, 
                 let start = next;
                 next = check_item(buf, next, depth + 1)?;
                 if major == 5 && i % 2 == 0 {
-                    let key = &buf[start..next];
+                    let key = buf.get(start..next).ok_or(CanonicalError::Truncated)?;
                     if prev_key.is_some_and(|prev| prev >= key) {
                         return Err(CanonicalError::MapKeyOrder);
                     }

@@ -1,0 +1,5 @@
+# The lints against panics (see the top of lib.rs of the decoder crates) do not apply to tests.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-panic-in-tests = true

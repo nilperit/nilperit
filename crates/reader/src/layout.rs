@@ -2,6 +2,7 @@
 
 use alloc::format;
 use alloc::string::String;
+use core::fmt::Write;
 use nilperit_format::{PackName, SnapshotId};
 
 /// The first copy of the vault config.
@@ -15,14 +16,12 @@ pub const LOCK_PATH: &str = "locks/writer";
 /// The directory of the snapshot headers.
 pub const SNAPSHOTS_DIR: &str = "snapshots";
 
-const HEX: &[u8; 16] = b"0123456789abcdef";
-
 /// Writes bytes as lowercase hexadecimal.
 pub fn hex(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        out.push(char::from(HEX[usize::from(byte >> 4)]));
-        out.push(char::from(HEX[usize::from(byte & 15)]));
+        // Writing to a `String` cannot fail.
+        let _ = write!(out, "{byte:02x}");
     }
     out
 }
@@ -54,7 +53,8 @@ fn parse_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
     }
     let mut bytes = [0u8; N];
     for (byte, pair) in bytes.iter_mut().zip(text.as_bytes().chunks(2)) {
-        *byte = (hex_value(pair[0])? << 4) | hex_value(pair[1])?;
+        let [high, low] = pair else { return None };
+        *byte = (hex_value(*high)? << 4) | hex_value(*low)?;
     }
     Some(bytes)
 }
@@ -86,6 +86,17 @@ mod tests {
     #[test]
     fn hex_is_lowercase() {
         assert_eq!(hex(&[0x00, 0xab, 0xff]), "00abff");
+    }
+
+    #[test]
+    fn hex_of_every_byte_is_read_back() {
+        let all: [u8; 256] = core::array::from_fn(|i| i as u8);
+        let text = hex(&all);
+        assert_eq!(text.len(), 512);
+        assert_eq!(parse_hex::<256>(&text), Some(all));
+        // An odd length and a character that is not a hex digit.
+        assert_eq!(parse_hex::<1>("a"), None);
+        assert_eq!(parse_hex::<1>("0g"), None);
     }
 
     #[test]

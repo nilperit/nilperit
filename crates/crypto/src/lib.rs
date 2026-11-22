@@ -9,6 +9,15 @@
 //! caller gives one.
 
 #![no_std]
+// These crates read bytes that are not trusted. A panic there is a bug: the reader must give an
+// error (AGENTS.md, "Damage stays local"). A site that cannot fail gets an `#[allow]` with the
+// reason.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 
 extern crate alloc;
 
