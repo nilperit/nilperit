@@ -13,6 +13,7 @@ NilPerit is a personal backup system. It pulls your data from cloud services and
 - [How the format fits together](docs/overview.md) — informal explainer with diagrams
 - [Vault format](docs/format.md) — the storage format specification (draft)
 - [Glossary](docs/glossary.md) — the technical terms
+- [Roadmap](docs/roadmap.md) — what we build next, and in which order
 - [Before format version 1](docs/pre-v1.md) — what must be decided or checked before the format is frozen
 - [Design decisions](docs/decisions/) — why NilPerit works the way it does
 - [Security policy](SECURITY.md) — how to report a vulnerability

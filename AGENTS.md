@@ -13,6 +13,7 @@ NilPerit is a personal backup system. It pulls data from cloud services and loca
 3. [`docs/overview.md`](docs/overview.md) — an informal explainer with diagrams. Not normative, but it must match `format.md`.
 4. [`docs/decisions/`](docs/decisions/) — architecture decision records: why things are the way they are.
 5. [`docs/pre-v1.md`](docs/pre-v1.md) — what must be decided or checked before format version 1. Add an item there when you park a decision or find a gap that you do not fix now.
+6. [`docs/roadmap.md`](docs/roadmap.md) — what we build next and in which order, and what the first working system leaves out.
 
 If the code and `format.md` disagree, stop and ask. Do not silently follow either one.
 
@@ -25,6 +26,16 @@ If the code and `format.md` disagree, stop and ask. Do not silently follow eithe
 - **The write-only node.** Code that runs on a node must never require the private part of the read key (ADR 0004).
 - **Deterministic encoding.** Objects that are hashed must always encode to the same bytes (ADR 0006).
 - **Readers read every older format version.** Never break reading of an existing format version (ADR 0011).
+
+## Design preferences
+
+These are the choices that the maintainers made again and again. Follow them when a detail is open, and say what your choice gives up.
+
+- **Strict and simple.** A reader rejects a whole pack or object whose schema version, algorithm name or compression name it does not know. Do not add partial recovery of data from mixed versions: the newer reader is in the vault (ADR 0011). Ignoring unknown fields is resilience, not a compatibility mechanism.
+- **One source of truth.** Do not store data that follows from other data, because the two can disagree. Example: a delta entry has no "added" list, because "new" follows from the state before it (ADR 0019).
+- **Writer policy is not format.** The format records what a writer did, not how it decides. Example: which objects to compress and with what (ADR 0016).
+- **Names carry no information.** IDs and file names are random. Put information in a name only when it has a function (ADR 0019).
+- **Write accepted risks down.** Record them in an ADR or in `docs/pre-v1.md`. Do not add mechanisms against threats that the maintainers judged unlikely.
 
 ## Workspace layout
 
@@ -53,6 +64,7 @@ nilperit-connector-*, nilperit-node
 - Never log, print or include in error messages: keys, the recovery phrase, plaintext content, item titles or file names.
 - Use widely used, well-reviewed crypto crates (RustCrypto, `blake3`). Check the audit status of a crate before it handles key material, and record it in the pull request (current known status: `docs/decisions/0012-post-quantum-hybrid.md`). Never implement cryptographic primitives yourself.
 - Add tests with every change. For format code, add round-trip and test-vector tests.
+- Make a test vector with an implementation other than the one under test (for example a Python script), so that it checks the specification and not only the code. Check that the hex in `docs/format.md` is the hex that the tests use.
 
 ## Documentation conventions
 
@@ -68,6 +80,8 @@ nilperit-connector-*, nilperit-node
 - Never push to `main`. Work on a branch and open a pull request; `main` only accepts squash merges.
 - Pull request titles follow Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`, `ci:`). The title becomes the commit message on `main`.
 - Keep pull requests small and focused on one change.
+- Update a branch with a rebase onto `main`, and push it with `git push --force-with-lease`. Do not merge `main` into a branch. Ask first if someone else may have the branch checked out.
+- Before you open a pull request, run what CI runs: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo check --locked --target wasm32-unknown-unknown -p nilperit-format -p nilperit-crypto -p nilperit-reader`, `scripts/check-layering.sh`, and `cargo deny check`.
 
 ## Security rules for CI and dependencies
 
