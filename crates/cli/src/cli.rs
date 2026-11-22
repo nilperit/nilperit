@@ -26,6 +26,10 @@ pub enum Command {
     /// List the sources of a vault, or the items of one source. This needs the recovery
     /// phrase.
     Ls(LsArgs),
+
+    /// Restore the files of a source from a vault into a folder. It never overwrites a file
+    /// that exists. This needs the recovery phrase.
+    Restore(RestoreArgs),
 }
 
 #[derive(Debug, Args)]
@@ -99,4 +103,36 @@ pub struct LsArgs {
 
     #[command(flatten)]
     pub phrase: PhraseArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct RestoreArgs {
+    /// The folder to restore into. It is made when it does not exist. Files that exist in
+    /// it are never overwritten.
+    pub destination: PathBuf,
+
+    /// The folder of the vault.
+    #[arg(long, value_name = "FOLDER")]
+    pub vault: PathBuf,
+
+    /// Restore the source with this name (see `sync --name`).
+    #[arg(long, value_name = "NAME", conflicts_with = "source_id")]
+    pub name: Option<String>,
+
+    /// Restore the source with this ID (see `ls`). Not needed when the vault has one
+    /// source.
+    #[arg(long, value_name = "ID")]
+    pub source_id: Option<String>,
+
+    /// Restore only this item, or the items below this folder. The path is written as
+    /// `ls` shows it, with `/` between the parts.
+    #[arg(long, value_name = "PATH")]
+    pub path: Option<String>,
+
+    #[command(flatten)]
+    pub phrase: PhraseArgs,
+
+    /// Show the names of the items that were left alone or could not be restored.
+    #[arg(short, long)]
+    pub verbose: bool,
 }

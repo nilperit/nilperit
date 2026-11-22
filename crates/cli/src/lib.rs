@@ -61,6 +61,7 @@ pub fn run<R: CryptoRng>(
         }
         Command::Sync(args) => commands::sync::run(&args, env, out, rng),
         Command::Ls(args) => commands::ls::run(&args, env, stdin, out, err),
+        Command::Restore(args) => commands::restore::run(&args, env, stdin, out, err),
     };
     match result {
         Ok(code) => code,

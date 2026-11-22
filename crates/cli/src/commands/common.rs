@@ -4,12 +4,15 @@ use crate::credential::load_credential;
 use crate::environment::Environment;
 use crate::error::CliError;
 use crate::exec::block_on;
-use nilperit_format::{VaultConfig, VaultId, split_config_file};
-use nilperit_reader::Target;
+use crate::phrase::read_seed;
+use nilperit_crypto::RootSeed;
+use nilperit_format::{SourceId, VaultConfig, VaultId, split_config_file};
 use nilperit_reader::layout::{CONFIG_A, CONFIG_B};
+use nilperit_reader::{PackIndex, Snapshots, Target, Vault, VaultError};
 use nilperit_target_fs::FsTarget;
 use nilperit_writer::Credential;
-use std::path::PathBuf;
+use std::io::BufRead;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The time of this machine in milliseconds since 1970.
@@ -62,4 +65,48 @@ pub fn load_node_credential(
         return Err(CliError::WrongCredential);
     }
     Ok(credential)
+}
+
+/// A vault that is open for reading: with the keys of the recovery phrase, the index of
+/// its packs and its snapshot headers.
+pub struct OpenVault {
+    pub seed: RootSeed,
+    pub vault: Vault<FsTarget>,
+    pub index: PackIndex,
+    pub snapshots: Snapshots,
+}
+
+/// Gets the recovery phrase, opens the vault with it, and reads the index of the packs and
+/// the snapshot headers. A pack or a header that cannot be used does not stop this: the
+/// caller finds them in `index.skipped()` and `snapshots.skipped()` (damage stays local).
+pub fn open_vault(
+    folder: &Path,
+    phrase_file: Option<&Path>,
+    env: &Environment,
+    stdin: &mut dyn BufRead,
+) -> Result<OpenVault, CliError> {
+    let seed = read_seed(phrase_file, env, stdin)?;
+    let vault = block_on(Vault::open(FsTarget::new(folder), &seed)).map_err(CliError::Vault)?;
+    let index = block_on(vault.scan_packs()).map_err(|e| CliError::Vault(VaultError::Target(e)))?;
+    let snapshots =
+        block_on(vault.read_snapshots()).map_err(|e| CliError::Vault(VaultError::Target(e)))?;
+    Ok(OpenVault {
+        seed,
+        vault,
+        index,
+        snapshots,
+    })
+}
+
+/// A source ID as the list of sources shows it: 32 hexadecimal characters.
+pub fn parse_source_id(text: &str) -> Result<SourceId, CliError> {
+    if text.len() != 32 || !text.is_ascii() {
+        return Err(CliError::BadSourceId);
+    }
+    let mut bytes = [0u8; 16];
+    for (byte, pair) in bytes.iter_mut().zip(text.as_bytes().chunks(2)) {
+        let pair = std::str::from_utf8(pair).map_err(|_| CliError::BadSourceId)?;
+        *byte = u8::from_str_radix(pair, 16).map_err(|_| CliError::BadSourceId)?;
+    }
+    Ok(SourceId::from_bytes(bytes))
 }

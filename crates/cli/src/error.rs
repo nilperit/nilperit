@@ -50,6 +50,17 @@ pub enum CliError {
     NoSuchSource,
     /// The journal of a source cannot be read. Part of the vault is damaged or missing.
     Journal(JournalError),
+    /// The folder to restore into cannot be used. Only the kind of the error is shown.
+    Destination(io::ErrorKind),
+    /// The folder to restore into is in the vault.
+    DestinationInVault,
+    /// The vault has no sources, or more than one and none was named. The value is the
+    /// number of sources.
+    SourceNotChosen(usize),
+    /// The path to restore is not a path of the source.
+    BadPath,
+    /// No item has that path.
+    NothingMatches,
     /// The vault was made, and the credential could not be saved. The text says what
     /// the person can do.
     VaultMadeWithoutCredential(Box<CliError>),
@@ -82,6 +93,15 @@ impl fmt::Display for CliError {
             Self::BadSourceId => f.write_str("a source ID is 32 hexadecimal characters"),
             Self::NoSuchSource => f.write_str("the vault has no source with that name or ID"),
             Self::Journal(e) => write!(f, "the journal of the source cannot be read: {e}"),
+            Self::Destination(kind) => write!(f, "the folder to restore into cannot be used ({kind:?})"),
+            Self::DestinationInVault => f.write_str("the folder to restore into is inside the vault"),
+            Self::SourceNotChosen(0) => f.write_str("the vault has no sources"),
+            Self::SourceNotChosen(n) => write!(
+                f,
+                "the vault has {n} sources: name one with --name, or give its ID with --source-id (`nilperit ls` shows them)"
+            ),
+            Self::BadPath => f.write_str("a path has parts between `/`, and none is empty, `.` or `..`"),
+            Self::NothingMatches => f.write_str("no item has that path"),
             Self::Lock(e) => e.fmt(f),
             Self::Sync(e) => e.fmt(f),
             Self::NoConfigFolder => f.write_str(
