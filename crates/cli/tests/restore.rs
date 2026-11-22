@@ -69,7 +69,14 @@ fn tree(root: &Path) -> Vec<(String, Vec<u8>)> {
             if p.is_dir() {
                 walk(root, &p, files);
             } else {
-                let name = p.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+                // The parts are joined with `/` on every system, as in a native ID.
+                let name = p
+                    .strip_prefix(root)
+                    .unwrap()
+                    .components()
+                    .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/");
                 files.push((name, fs::read(&p).unwrap()));
             }
         }
