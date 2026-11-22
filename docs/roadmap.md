@@ -15,13 +15,13 @@ The goal is four commands: `nilperit init`, `nilperit sync <folder>`, `nilperit 
 The order of work. Each step is its own pull request:
 
 1. **The reader** (`nilperit-reader`):
-   - an async storage trait that does not depend on a runtime, so the browser can use `fetch` later (range read, read all, list, and write and rename for the writer);
+   - an async target trait that does not depend on a runtime, so the browser can use `fetch` later. The reader's trait only reads (length, range read, read all, list). The trait that writes and renames lives in the writer crate, so a reader cannot change a vault;
    - opening a vault: the two config copies, the MAC, and the choice of the newest valid copy;
    - opening a pack: the footer, the trailer, the header, the seal, and the object table;
    - replaying the journal: snapshot headers, the head, and the delta entries;
    - reading the content of an item: item record, content object, chunks, decompression, and the check of every ID.
 2. **The writer** (`nilperit-writer`): the chunker, the pack builder, the commit procedure (temporary file, sync, rename, in the order of format.md section 8), the writer lock, and the trait that connectors implement.
-3. **The local folder connector and the `nilperit` binary.** The file-system storage lives in a small crate of its own, because the reader must stay free of runtimes and file-system code.
+3. **The local folder connector and the `nilperit` binary.** The file-system target lives in a small crate of its own, because the reader must stay free of runtimes and file-system code.
 
 ### What the first system leaves out on purpose
 
