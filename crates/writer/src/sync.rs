@@ -9,7 +9,7 @@
 //! A run is safe to repeat. It compares with the state that the journal gives, so
 //! a run that stopped can be started again, and it continues with what is missing.
 
-use crate::chunking::{ChunkReader, ChunkerError, Fixed, PROFILE_DEFAULT};
+use crate::chunking::{CHUNKING_PROFILE_DEFAULT, ChunkReader, ChunkerError, Fixed};
 use crate::commit::{CommitError, commit};
 use crate::connector::{Changes, Connector, ConnectorError, SourceItem};
 use crate::credential::Credential;
@@ -31,8 +31,9 @@ use std::io;
 /// The settings of a run.
 #[derive(Clone, Debug)]
 pub struct SyncOptions {
-    /// The ID of the chunking profile (format.md 5.2). It must be in the vault config.
-    pub profile: u32,
+    /// The ID of the chunking profile that the run uses (format.md 5.2). It must be in
+    /// the vault config.
+    pub chunking_profile: u32,
     /// The size at which a pack is closed, in bytes (format.md 6.1).
     pub pack_size: usize,
     /// The size of new data after which the run commits, in bytes (format.md 8.4).
@@ -46,7 +47,7 @@ pub struct SyncOptions {
 impl Default for SyncOptions {
     fn default() -> Self {
         Self {
-            profile: PROFILE_DEFAULT,
+            chunking_profile: CHUNKING_PROFILE_DEFAULT,
             pack_size: 16 * 1024 * 1024,
             commit_size: 256 * 1024 * 1024,
             compress: true,
@@ -103,7 +104,7 @@ pub enum SyncError {
     /// The connector failed.
     Connector(ConnectorError),
     /// The chunking profile is not in the vault config, or this writer cannot use it.
-    Profile(u32, Option<ChunkerError>),
+    ChunkingProfile(u32, Option<ChunkerError>),
     /// A pack cannot be built.
     Build(BuildError),
     /// A commit failed.
@@ -125,10 +126,12 @@ impl fmt::Display for SyncError {
             Self::Target(e) => e.fmt(f),
             Self::Journal(e) => write!(f, "the journal cannot be read: {e}"),
             Self::Connector(e) => e.fmt(f),
-            Self::Profile(id, None) => {
+            Self::ChunkingProfile(id, None) => {
                 write!(f, "chunking profile {id} is not in the vault config")
             }
-            Self::Profile(id, Some(e)) => write!(f, "chunking profile {id} cannot be used: {e}"),
+            Self::ChunkingProfile(id, Some(e)) => {
+                write!(f, "chunking profile {id} cannot be used: {e}")
+            }
             Self::Build(e) => e.fmt(f),
             Self::Commit(e) => e.fmt(f),
             Self::Lock(e) => e.fmt(f),
@@ -204,14 +207,14 @@ pub async fn sync<T: WriteTarget, C: Connector, R: CryptoRng>(
     let vault = Vault::open_with(lock.target(), credential.reader_keys()).await?;
     let index = vault.scan_packs().await?;
     let snapshots = vault.read_snapshots().await?;
-    let profile = vault
+    let chunking_profile = vault
         .config()
         .chunking_profiles
         .iter()
-        .find(|p| p.id == options.profile)
-        .ok_or(SyncError::Profile(options.profile, None))?;
-    let chunker =
-        Fixed::from_profile(profile).map_err(|e| SyncError::Profile(options.profile, Some(e)))?;
+        .find(|p| p.id == options.chunking_profile)
+        .ok_or(SyncError::ChunkingProfile(options.chunking_profile, None))?;
+    let chunker = Fixed::from_profile(chunking_profile)
+        .map_err(|e| SyncError::ChunkingProfile(options.chunking_profile, Some(e)))?;
 
     let (state, head) = match snapshots.head(&source) {
         Some(header) => {
@@ -447,7 +450,7 @@ impl<'a, T: WriteTarget, R: CryptoRng> Session<'a, T, R> {
                 chunks: chunk_ids,
                 size,
                 content_hash: ContentHash::from_bytes(hasher.finalize()),
-                chunking_profile: self.options.profile,
+                chunking_profile: self.options.chunking_profile,
             };
             content_ids.push(self.add(CONTENT_OBJECT, &content.encode()?).await?);
         }
@@ -909,18 +912,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_profile_that_the_vault_does_not_have() {
+    fn rejects_a_chunking_profile_that_the_vault_does_not_have() {
         let (target, credential, source) = setup();
         let options = SyncOptions {
-            profile: 99,
+            chunking_profile: 99,
             ..SyncOptions::default()
         };
         let mut connector = ListConnector::new(&[("a", b"x")]);
         let result = run(&target, &credential, source, &mut connector, &options, 5);
-        assert!(matches!(result, Err(SyncError::Profile(99, None))));
-        // The large profile is in a new vault.
+        assert!(matches!(result, Err(SyncError::ChunkingProfile(99, None))));
+        // The large chunking profile is in a new vault.
         let options = SyncOptions {
-            profile: 2,
+            chunking_profile: 2,
             ..SyncOptions::default()
         };
         let report = run(&target, &credential, source, &mut connector, &options, 5).unwrap();

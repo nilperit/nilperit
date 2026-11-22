@@ -8,10 +8,10 @@ use nilperit_format::ChunkingProfile;
 use std::fmt;
 use std::io::{self, Read};
 
-/// The ID of the profile for documents, email and general files (format.md 5.2.4).
-pub const PROFILE_DEFAULT: u32 = 1;
-/// The ID of the profile for video, photos and archives (format.md 5.2.4).
-pub const PROFILE_LARGE: u32 = 2;
+/// The ID of the chunking profile for documents, email and general files (format.md 5.2.4).
+pub const CHUNKING_PROFILE_DEFAULT: u32 = 1;
+/// The ID of the chunking profile for video, photos and archives (format.md 5.2.4).
+pub const CHUNKING_PROFILE_LARGE: u32 = 2;
 
 /// The name of the algorithm that cuts at a fixed size (format.md 5.2.4.1).
 pub const ALGORITHM_FIXED: &str = "fixed";
@@ -26,8 +26,8 @@ pub fn default_profiles() -> Vec<ChunkingProfile> {
         max_size,
     };
     vec![
-        fixed(PROFILE_DEFAULT, 256 * 1024),
-        fixed(PROFILE_LARGE, 2 * 1024 * 1024),
+        fixed(CHUNKING_PROFILE_DEFAULT, 256 * 1024),
+        fixed(CHUNKING_PROFILE_LARGE, 2 * 1024 * 1024),
     ]
 }
 
