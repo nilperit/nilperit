@@ -18,7 +18,9 @@ use crate::pack_builder::{BuildError, BuiltPack, PackBuilder};
 use crate::progress::{Counts, Progress};
 use crate::target::WriteTarget;
 use nilperit_crypto::{CryptoRng, SizeError};
+use nilperit_format::MAX_OBJECT_SIZE;
 use nilperit_format::object_type::{CHUNK, CONTENT_OBJECT, DELTA_ENTRY, ITEM_RECORD};
+use nilperit_format::pack::PACKED_OBJECT_OVERHEAD;
 use nilperit_format::{
     Change, ContentHash, ContentObject, DeltaEntry, ItemKey, ItemRecord, ObjectError, ObjectId,
     PackClass, SnapshotHeader, SnapshotId, SourceId,
@@ -40,6 +42,12 @@ pub struct SyncOptions {
     /// The size of new data after which the run commits, in bytes (format.md 8.4).
     /// A run that stops loses at most this much work. The data waits in memory.
     pub commit_size: u64,
+    /// The size of the delta entry after which the run commits, in bytes (format.md 5.5.2). The
+    /// entry has a record for every item that changed since the last commit, and an object is at
+    /// most 1 GiB (format.md 6.7.6): a run that commits only by the size of the data would fail
+    /// when it has many small items. The size is an estimate of the encoded size, which is a
+    /// little more than the real size. The value must be far below the limit of an object.
+    pub commit_entry_size: usize,
     /// Whether to try to compress objects (format.md 6.6.5). The result is kept
     /// only when it is smaller.
     pub compress: bool,
@@ -51,6 +59,7 @@ impl Default for SyncOptions {
             chunking_profile: CHUNKING_PROFILE_DEFAULT,
             pack_size: 16 * 1024 * 1024,
             commit_size: 256 * 1024 * 1024,
+            commit_entry_size: 64 * 1024 * 1024,
             compress: true,
         }
     }
@@ -307,6 +316,7 @@ pub async fn sync_with_progress<T: WriteTarget, C: Connector, R: CryptoRng>(
         packs: Vec::new(),
         new_ids: BTreeSet::new(),
         pending: Vec::new(),
+        pending_entry_size: 0,
         head,
         stored_cursor: start_cursor.clone(),
         report: SyncReport::default(),
@@ -345,11 +355,11 @@ pub async fn sync_with_progress<T: WriteTarget, C: Connector, R: CryptoRng>(
                 }
                 Some(_) => {
                     session.report.items_changed += 1;
-                    session.pending.push(prepared.change);
+                    session.add_change(prepared.change);
                 }
                 None => {
                     session.report.items_new += 1;
-                    session.pending.push(prepared.change);
+                    session.add_change(prepared.change);
                 }
             },
             // The item is gone from the source. It is dropped: with a complete list
@@ -362,7 +372,7 @@ pub async fn sync_with_progress<T: WriteTarget, C: Connector, R: CryptoRng>(
             Err(kind) => session.report.failed.push(FailedItem { native_id, kind }),
         }
         session.item_finished(hint);
-        if session.pending_bytes() >= options.commit_size && !session.pending.is_empty() {
+        if session.commit_due() {
             session
                 .commit(Vec::new(), session.stored_cursor.clone())
                 .await?;
@@ -387,13 +397,40 @@ pub async fn sync_with_progress<T: WriteTarget, C: Connector, R: CryptoRng>(
     }
     session.report.items_deleted = gone.len() as u64;
 
+    // The keys of the deleted items are in the delta entry too. A source that lost millions of
+    // items is deleted in several commits, with the cursor of the commit before, so that an
+    // entry stays far below the limit of an object.
+    let mut gone: Vec<ItemKey> = gone.into_iter().collect();
+    let keys_per_entry = (options.commit_entry_size / DELETED_KEY_ENTRY_SIZE).max(1);
+    while gone.len() > keys_per_entry {
+        let batch: Vec<ItemKey> = gone.drain(..keys_per_entry).collect();
+        session.commit(batch, session.stored_cursor.clone()).await?;
+    }
+
     // The last commit. The first run always commits, so that the source exists in
     // the vault, also when it is empty.
     let cursor_changed = cursor != session.stored_cursor;
     if session.head.is_none() || !session.pending.is_empty() || !gone.is_empty() || cursor_changed {
-        session.commit(gone.into_iter().collect(), cursor).await?;
+        session.commit(gone, cursor).await?;
     }
     Ok(session.report)
+}
+
+/// Whether bytes of this size can be an object that does not compress, as the hashes of the
+/// chunks in a content object do not: the packed object has 40 bytes more (format.md 6.7.6).
+fn fits_in_an_object(length: usize) -> bool {
+    length <= (MAX_OBJECT_SIZE - PACKED_OBJECT_OVERHEAD) as usize
+}
+
+/// The size of the record of a deleted item in the encoded delta entry: a byte string of 32 bytes
+/// with its header.
+const DELETED_KEY_ENTRY_SIZE: usize = 34;
+
+/// An estimate of the size of a change in the encoded delta entry (format.md 5.5.2.1): the
+/// array, the key and the record of the item (34 bytes each with the header of the byte
+/// string), and the content objects (34 bytes each). The headers of the arrays are rounded up.
+fn change_entry_size(change: &Change) -> usize {
+    80 + 34 * change.content.len()
 }
 
 /// The state of one run.
@@ -419,6 +456,8 @@ struct Session<'a, T: WriteTarget, R> {
     new_ids: BTreeSet<ObjectId>,
     /// The changes since the last commit.
     pending: Vec<Change>,
+    /// The estimated size of the delta entry for `pending` (see [`change_entry_size`]).
+    pending_entry_size: usize,
     head: Option<Head>,
     /// The cursor that the last commit stored.
     stored_cursor: Option<Vec<u8>>,
@@ -444,6 +483,22 @@ impl<'a, T: WriteTarget, R: CryptoRng> Session<'a, T, R> {
         }
         self.counts.items_done += 1;
         self.tell(false);
+    }
+
+    /// Keeps a change for the next commit.
+    fn add_change(&mut self, change: Change) {
+        self.pending_entry_size = self
+            .pending_entry_size
+            .saturating_add(change_entry_size(&change));
+        self.pending.push(change);
+    }
+
+    /// Whether the run has enough for a commit: data that waits in memory, or changes that make
+    /// a large delta entry.
+    fn commit_due(&self) -> bool {
+        !self.pending.is_empty()
+            && (self.pending_bytes() >= self.options.commit_size
+                || self.pending_entry_size >= self.options.commit_entry_size)
     }
 
     /// The size of the data that waits for a commit.
@@ -538,7 +593,14 @@ impl<'a, T: WriteTarget, R: CryptoRng> Session<'a, T, R> {
                 content_hash: ContentHash::from_bytes(hasher.finalize()),
                 chunking_profile: self.options.chunking_profile,
             };
-            content_ids.push(self.add(CONTENT_OBJECT, &content.encode()?).await?);
+            let encoded = content.encode()?;
+            // A file with so many chunks that the list of them is not an object: the item
+            // cannot be stored. It is reported like any item that cannot be read, and the run
+            // goes on. The chunks that it added stay: another item can use them.
+            if !fits_in_an_object(encoded.len()) {
+                return Ok(Err(io::ErrorKind::FileTooLarge));
+            }
+            content_ids.push(self.add(CONTENT_OBJECT, &encoded).await?);
         }
         let record = ItemRecord {
             source_id: self.source,
@@ -570,6 +632,7 @@ impl<'a, T: WriteTarget, R: CryptoRng> Session<'a, T, R> {
     ) -> Result<(), SyncError> {
         self.tell(true);
         let mut changed = std::mem::take(&mut self.pending);
+        self.pending_entry_size = 0;
         changed.sort_by_key(|change| change.item_key);
         deleted.sort();
 
@@ -1294,6 +1357,138 @@ mod tests {
         assert_eq!(state.sequence, 5);
         assert_eq!(state.cursor, Some(vec![9]));
         assert_eq!(state.files.len(), 4);
+    }
+
+    #[test]
+    fn many_small_items_make_several_commits_so_that_a_delta_entry_stays_small() {
+        let (target, credential, source) = setup();
+        let names: Vec<String> = (0..10).map(|i| format!("file-{i}")).collect();
+        let list: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), &b"x"[..])).collect();
+        let mut connector = ListConnector::new(&list);
+        // Each change is estimated at 114 bytes: a commit after three of them. The data is
+        // far below the size at which a run commits.
+        let options = SyncOptions {
+            commit_entry_size: 3 * 114,
+            ..SyncOptions::default()
+        };
+        let report = run(&target, &credential, source, &mut connector, &options, 5).unwrap();
+        // Items 3, 6 and 9, and the last one.
+        assert_eq!(report.commits, 4);
+        assert_eq!(report.items_new, 10);
+        let state = read_state(&target, &seed(), &source).unwrap();
+        assert_eq!(state.sequence, 4);
+        assert_eq!(state.files.len(), 10);
+    }
+
+    #[test]
+    fn an_item_with_many_content_objects_counts_for_more() {
+        // One content object: 114 bytes. Ten: 420 bytes.
+        let change = |contents: usize| Change {
+            item_key: ItemKey::from_bytes([1; 32]),
+            item_record: ObjectId::from_bytes([2; 32]),
+            content: vec![ObjectId::from_bytes([3; 32]); contents],
+        };
+        assert_eq!(change_entry_size(&change(1)), 114);
+        assert_eq!(change_entry_size(&change(10)), 420);
+    }
+
+    #[test]
+    fn the_estimate_of_a_change_is_never_less_than_the_real_size() {
+        for contents in [0usize, 1, 3, 100] {
+            let changed: Vec<Change> = (0..200u8)
+                .map(|i| Change {
+                    item_key: ItemKey::from_bytes([i; 32]),
+                    item_record: ObjectId::from_bytes([i; 32]),
+                    content: (0..contents)
+                        .map(|c| ObjectId::from_bytes([c as u8 ^ 0x55; 32]))
+                        .collect(),
+                })
+                .collect();
+            let deleted: Vec<ItemKey> = (0..50u8)
+                .map(|i| ItemKey::from_bytes([200 + i; 32]))
+                .collect();
+            let estimate = changed.iter().map(change_entry_size).sum::<usize>()
+                + deleted.len() * DELETED_KEY_ENTRY_SIZE;
+            let entry = DeltaEntry {
+                source_id: SourceId::from_bytes([1; 16]),
+                sequence: 1,
+                parent: None,
+                snapshot_id: SnapshotId::from_bytes([2; 16]),
+                time: 0,
+                connector_cursor: None,
+                changed,
+                deleted,
+            };
+            let real = entry.encode().unwrap().len();
+            // The entry has a fixed part (the envelope and the fields): 150 bytes are enough.
+            assert!(real <= estimate + 150, "{contents}: {real} {estimate}");
+            // And the estimate is not far above.
+            assert!(estimate <= real * 3 / 2, "{contents}: {real} {estimate}");
+        }
+    }
+
+    #[test]
+    fn many_deleted_items_are_deleted_in_several_commits() {
+        let (target, credential, source) = setup();
+        let names: Vec<String> = (0..10).map(|i| format!("file-{i}")).collect();
+        let list: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), &b"x"[..])).collect();
+        let mut connector = ListConnector::new(&list);
+        connector.cursor = Some(vec![1]);
+        run_default(&target, &credential, source, &mut connector);
+
+        // The source is empty now: 10 keys of 34 bytes, and an entry takes 3 of them.
+        connector.items.clear();
+        connector.cursor = Some(vec![2]);
+        let options = SyncOptions {
+            commit_entry_size: 3 * DELETED_KEY_ENTRY_SIZE,
+            ..SyncOptions::default()
+        };
+        let report = run(&target, &credential, source, &mut connector, &options, 6).unwrap();
+        assert_eq!(report.items_deleted, 10);
+        // 3 + 3 + 3 + 1 keys.
+        assert_eq!(report.commits, 4);
+        let state = read_state(&target, &seed(), &source).unwrap();
+        assert_eq!(state.sequence, 5);
+        assert!(state.files.is_empty());
+        // The cursor of the last commit is the new one.
+        assert_eq!(state.cursor, Some(vec![2]));
+    }
+
+    #[test]
+    fn a_source_with_a_cursor_deletes_in_several_commits_too() {
+        let (target, credential, source) = setup();
+        let names: Vec<String> = (0..7).map(|i| format!("file-{i}")).collect();
+        let list: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), &b"x"[..])).collect();
+        let mut connector = ListConnector::new(&list);
+        run_default(&target, &credential, source, &mut connector);
+
+        // A list that is not complete: the source says which items are gone.
+        let mut connector = ListConnector::new(&[]);
+        connector.complete = false;
+        connector.deleted = names.clone();
+        let options = SyncOptions {
+            commit_entry_size: 2 * DELETED_KEY_ENTRY_SIZE,
+            ..SyncOptions::default()
+        };
+        let report = run(&target, &credential, source, &mut connector, &options, 6).unwrap();
+        assert_eq!(report.items_deleted, 7);
+        // 2 + 2 + 2 + 1 keys.
+        assert_eq!(report.commits, 4);
+        assert!(
+            read_state(&target, &seed(), &source)
+                .unwrap()
+                .files
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_list_of_chunks_that_is_not_an_object_cannot_be_stored() {
+        let limit = (MAX_OBJECT_SIZE - PACKED_OBJECT_OVERHEAD) as usize;
+        assert!(fits_in_an_object(0));
+        assert!(fits_in_an_object(limit));
+        assert!(!fits_in_an_object(limit + 1));
+        assert!(!fits_in_an_object(MAX_OBJECT_SIZE as usize));
     }
 
     #[test]
