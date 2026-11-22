@@ -8,3 +8,6 @@ pub const CHUNK: u32 = 1;
 
 /// A content object (format.md 5.3).
 pub const CONTENT_OBJECT: u32 = 2;
+
+/// The object table of a pack (format.md 6.7.3). It is not an object in a pack.
+pub const OBJECT_TABLE: u32 = 3;

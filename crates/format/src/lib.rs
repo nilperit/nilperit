@@ -13,9 +13,13 @@ pub mod canonical;
 pub mod content_object;
 pub mod envelope;
 pub mod ids;
+pub mod object_table;
 pub mod object_type;
+pub mod pack;
 
 pub use canonical::CanonicalError;
 pub use content_object::{ContentObject, ObjectError};
 pub use envelope::{Envelope, EnvelopeError};
 pub use ids::{ContentHash, HASH_LEN, ObjectId};
+pub use object_table::{Compression, KeyClass, ObjectTable, ObjectTableEntry};
+pub use pack::{Footer, Header, PackClass, PackError, Trailer};

@@ -360,7 +360,7 @@ This procedure can select an entry that was complete but not committed. That is 
 | none | The bytes are not changed. |
 | deflate | One DEFLATE stream (RFC 1951). It has no zlib header and no gzip header. |
 
-6.6.3. A reader MUST reject an object with a compression name that it does not know. It MUST NOT guess. This is the same rule as 4.5.1 for schema versions: an older reader stops at a newer format version (see 12.3), so an unknown name can only come from a bug or from damage.
+6.6.3. A reader MUST reject a pack that has an object with a compression name that it does not know. It MUST NOT guess. This is the same rule as 6.7.1.3 for the algorithm names of the header, and as 4.5.1 for schema versions: an older reader stops at a newer format version (see 12.3), so an unknown name can only come from a bug or from damage.
 
 6.6.4. **Reading.** A reader MUST check the AEAD tag of an object before it decompresses the object (see 9.3). The tag covers the compressed bytes. A reader MUST decompress an object to exactly the unpacked size of the object table. It MUST stop and reject the object when the output is longer than the unpacked size, and when the output is shorter. For the name "none", the decrypted bytes MUST have the unpacked size. When the reader has the dedup key, it MUST then check the object ID (see 4.7).
 
@@ -449,8 +449,11 @@ This procedure can select an entry that was complete but not committed. That is 
 - the last packed object does not end where the trailer starts;
 - an object ID occurs more than once;
 - a key class is not "R" or "W";
+- a compression name is not known (see 6.6.3);
 - a packed size is below 40;
 - a size is above a limit of 6.7.6.
+
+6.7.3.6. A pack can have no objects. Its object table has no entries, and its trailer starts where its header ends. Such a pack has no use, but it is not an error.
 
 6.7.4. **Footer.** The last 24 bytes of a pack are the footer:
 
