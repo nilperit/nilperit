@@ -140,6 +140,9 @@ The class of key that encrypts an *object*. Class R: only the *read key* can ope
 **Metadata pack**
 A *pack* that contains *caches*, for example *item map* nodes, *archive map* nodes, and copies of *item records*.
 
+**Native ID**
+The ID that a *source* gives to an *item*, as a byte string. Examples: a Gmail message ID, or the path of a file relative to the selected folder. NilPerit makes the *item key* from the source ID and the native ID.
+
 **nilperit-recover**
 The reader-only program. It can list, extract, verify, and salvage data. It cannot write to a *vault*.
 
@@ -219,13 +222,16 @@ The state of one *source* at one point in time.
 A small *cache* object that points to the *item map* of a *snapshot* and records the *journal position* of the *journal head*. NilPerit writes it last during a *commit*. It has *key class* W.
 
 **Snapshot ID**
-The identifier of one *snapshot*.
+The identifier of one *snapshot*: 16 random bytes that the writer makes for each snapshot. The name of the file of a *snapshot header* is the snapshot ID in hexadecimal.
 
 **Snapshot retention**
 The rules that control which *snapshots* NilPerit keeps.
 
 **Source**
 One *connector* account with one selection, for example "Gmail, label Banking". Each source has its own *journal*, *snapshots*, retention rules (*snapshot retention* and *item retention*), and *priority*.
+
+**Source ID**
+16 random bytes that NilPerit makes when it adds a *source*. They are in *item records*, *journal entries*, and *snapshot headers*.
 
 **Stored bytes**
 The bytes of an *object* that NilPerit hashes. For an enveloped object, they are the encoded *envelope*, exactly as a writer wrote it. For a raw object (a *chunk*), they are the plaintext before compression. NilPerit computes the *object ID* from the stored bytes and never from a new encoding.

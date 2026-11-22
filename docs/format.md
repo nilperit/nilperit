@@ -180,6 +180,9 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | 1 | Chunk | Raw |
 | 2 | Content object | Enveloped |
 | 3 | Object table | Enveloped |
+| 4 | Item record | Enveloped |
+| 5 | Delta entry | Enveloped |
+| 6 | Snapshot header | Enveloped |
 
 4.4.4. A raw object has a type ID, but no envelope (see 4.7.2). The type ID is only an input of its object ID. TBD: type IDs of the other object types.
 
@@ -258,12 +261,25 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 ### 5.4. Item record (truth)
 
-5.4.1. Fields:
+5.4.1. An item record is an enveloped object with type ID 4 and schema version 1. The body has these fields:
 
-- source ID and native ID of the item;
-- common fields: title, timestamps, size, media type;
-- source-specific metadata (opaque to the vault);
-- references to content objects.
+| Key | Field | CBOR type | Meaning |
+|---|---|---|---|
+| 1 | source ID | Byte string, 16 bytes | The source of the item (see 5.4.5.1) |
+| 2 | native ID | Byte string | The ID that the source gives to the item (see 5.4.5.2) |
+| 3 | title | Text string | A name to show, for example the subject of an email or the name of a file. It can be empty. |
+| 4 | modified | Integer | The time of the last change at the source (see 5.4.5.3). The field is not present when the source has no such time. |
+| 5 | created | Integer | The time of creation at the source (see 5.4.5.3). The field is not present when the source has no such time. |
+| 6 | size | Unsigned integer | The sum of the sizes of the content objects of the item, in bytes |
+| 7 | media type | Text string | The media type (RFC 6838), for example `text/plain`. The field is not present when it is not known. |
+| 8 | metadata | Any CBOR item | Metadata that only the connector understands. The vault does not interpret it. The field is not present when there is none. |
+| 9 | content | Array of byte strings, 32 bytes each | The object IDs of the content objects of the item, in an order that the connector defines. An item without content has an empty array. |
+
+5.4.1.1. A reader MUST reject an item record that has no field 1, 2, 3, 6, or 9, or that has a field with another CBOR type or size than the table gives.
+
+5.4.1.2. The native ID MUST be the native ID that the writer used to make the item key (see 5.6.5).
+
+5.4.1.3. The metadata can be any CBOR item that 4.6.1 allows. It is deterministic CBOR like all of the object.
 
 5.4.2. An item record MUST contain enough data to show the item without other objects, except its content.
 
@@ -271,16 +287,40 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 5.4.4. NilPerit MUST store raw originals byte for byte. Example: a Gmail message is stored as raw RFC 822 data.
 
+5.4.5. **Fields that more than one object uses.**
+
+5.4.5.1. A source ID is 16 random bytes. NilPerit makes them when it adds a source. The source ID is in item records, journal entries, and snapshot headers.
+
+5.4.5.2. A native ID is a byte string of at least 1 byte. It is not a text string, because the names of files are not always valid text. The connector defines the meaning. Examples: a Gmail message ID, or the path of a file relative to the selected folder.
+
+5.4.5.3. A time is an integer: the number of milliseconds since 1970-01-01 00:00:00 UTC. A time before 1970 is a negative integer. A connector that knows a more exact time can put it in the metadata of the item record (see 5.4.1).
+
 ### 5.5. Journal entries (truth)
 
 5.5.1. Each source has one journal. A journal is a chain of journal entries. Each entry points to its parent entry and has a sequence number: the sequence number of its parent plus one.
 
-5.5.2. A **delta entry** contains:
+5.5.2. A **delta entry** is an enveloped object with type ID 5 and schema version 1. The body has these fields:
 
-- snapshot ID and time;
-- connector cursor;
-- parent entry;
-- changes: items added, changed, and deleted, as item key → item record ID and content object IDs.
+| Key | Field | CBOR type | Meaning |
+|---|---|---|---|
+| 1 | source ID | Byte string, 16 bytes | The source of the journal |
+| 2 | sequence number | Unsigned integer | The sequence number of the entry (see 5.5.1). The first entry of a journal has sequence number 1. |
+| 3 | parent | Byte string, 32 bytes | The object ID of the parent entry. The field is not present in the first entry of a journal. |
+| 4 | snapshot ID | Byte string, 16 bytes | The ID of the snapshot that this entry belongs to (see 5.9.1.1) |
+| 5 | time | Integer | The time of the snapshot (see 5.4.5.3) |
+| 6 | connector cursor | Byte string | The connector cursor after this entry. The field is not present when the connector has no cursor. |
+| 7 | changed | Array of changes | The items that are new or that have a new version |
+| 8 | deleted | Array of byte strings, 32 bytes each | The item keys of the items that the source no longer has |
+
+5.5.2.1. A change is an array of 3 items: the item key (a byte string of 32 bytes), the object ID of the item record (a byte string of 32 bytes), and the object IDs of the content objects (an array of byte strings of 32 bytes each, as in field 9 of the item record). A change does not say if the item is new. A reader finds this out from the state before the entry.
+
+5.5.2.2. In each of the arrays 7 and 8, the entries are in ascending order of the bytes of the item key. An item key MUST NOT occur more than once in the whole delta entry. Then the same changes always make the same bytes.
+
+5.5.2.3. A reader that replays a delta entry sets the item record and the content objects of each item of the array 7. It removes the items of the array 8.
+
+5.5.2.4. The field 3 (parent) is present if and only if the sequence number is above 1. A reader that follows the chain MUST check that the sequence number of an entry is the sequence number of its parent plus 1.
+
+5.5.2.5. A writer SHOULD write one delta entry for each commit (see 8.4). A very large first synchronization is therefore not one very large delta entry.
 
 5.5.3. A **checkpoint** contains the complete state of the source at one time. It contains:
 
@@ -351,11 +391,29 @@ This procedure can select an entry that was complete but not committed. That is 
 
 ### 5.9. Snapshot header (cache)
 
-5.9.1. Fields: source ID, snapshot ID, time, root of the item map, parent snapshot, journal position (the ID and sequence number of the journal entry that is the head after this snapshot), statistics, and a copy of the essential vault config fields.
+5.9.1. A snapshot header is an enveloped object with type ID 6 and schema version 1. The body has these fields:
+
+| Key | Field | CBOR type | Meaning |
+|---|---|---|---|
+| 1 | source ID | Byte string, 16 bytes | The source of the snapshot |
+| 2 | snapshot ID | Byte string, 16 bytes | The ID of the snapshot (see 5.9.1.1) |
+| 3 | time | Integer | The time of the snapshot (see 5.4.5.3) |
+| 4 | item map root | Byte string, 32 bytes | The object ID of the root of the item map. The field is not present while the writer makes no item maps. |
+| 5 | parent snapshot | Byte string, 16 bytes | The snapshot ID of the previous snapshot of the source. The field is not present in the first snapshot. |
+| 6 | journal entry | Byte string, 32 bytes | The object ID of the journal entry that is the head after this snapshot |
+| 7 | journal sequence | Unsigned integer | The sequence number of that journal entry. Fields 6 and 7 are the journal position. |
+| 8 | statistics | Map | A map with the unsigned integer keys 1 (the number of items that exist) and 2 (the sum of their sizes in bytes). The field is not present when the writer has no statistics. |
+| 9 | vault | Map | A copy of the essential fields of the vault config (see 7.2.7): the keys 1, 3, 4, 5, 6, and 7 of the map in 7.2.2, with the same values |
+
+5.9.1.1. A snapshot ID is 16 random bytes. The writer makes a new one for each snapshot. The ID and the name of its file say nothing about the time or the order of the snapshot. The time is in the field `time`, and the sequence number gives the order (see 5.5.8.1), because clocks can be wrong.
 
 5.9.2. A snapshot header is one W object (see 3.3.7). All its fields, including the statistics, are encrypted.
 
 5.9.3. NilPerit can make a snapshot header again from the journal (see 5.5.10).
+
+5.9.4. A snapshot header is a file in the directory `snapshots/` of the vault. Its name is the snapshot ID in lowercase hexadecimal (32 characters). The bytes of the file are as in 3.3.7.1.
+
+5.9.5. A reader MUST ignore a snapshot header when the name of its file is not the snapshot ID in the header, or when its vault ID is not the vault ID of the vault config that the reader uses.
 
 ## 6. Packs
 
@@ -704,7 +762,7 @@ The items below are not fixed in this draft:
 - Contents and names in recovery/ (7.3).
 - Parity data format (10.4).
 - Fields of a checkpoint other than the connector cursor and the two trees (5.5.3): for example its time, and whether it has a snapshot ID. A checkpoint that compaction writes (11.3.1) does not come from a synchronization.
-- Type IDs and the field numbers of the object types other than the chunk and the content object (schema dictionary).
+- Type IDs and the field numbers of the object types other than the chunk, the content object, the object table, the item record, the delta entry, and the snapshot header: the checkpoint, the tree nodes, the condemnation record, and the index segment (schema dictionary).
 - The schema dictionary itself (4.6): NilPerit generates it from the Rust types. Until then, the field tables in section 5 are the only definition.
 
 ## Appendix A. Test vectors
@@ -881,4 +939,45 @@ A.9.5. The config file is the map followed by the MAC (211 bytes):
 
 ```
 a80100020103501111111111111111111111111111111104727863686163686132302d706f6c79313330350566626c616b6533066f782d77696e672d64726166742d3036075820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f08838501646e6f6e6500001a0001000085026c666173746364632d323032301a000100001a000400001a0010000085036c666173746364632d323032301a000800001a002000001a00800000372fab368795b471732a8a118492fbc5f48c34ac333cf0d1548b47e19ae9c828
+```
+
+### A.10. Item record, delta entry, and snapshot header
+
+A.10.1. The three objects of a vault with one file. They use the objects of A.8: the content object of A.8.3 and its content. The dedup key is the one of A.2.1.
+
+| Item | Value |
+|---|---|
+| Source ID | 16 bytes of `22` |
+| Snapshot ID | 16 bytes of `33` |
+| Vault ID | 16 bytes of `11` |
+| Native ID | The 14 bytes of the text `docs/hello.txt`: `646f63732f68656c6c6f2e747874` |
+| Item key (see 5.6.5) | `b19168afa67b7e95eb7000c5f93f73444e09b92245b5232d0d287187e6a867f6` |
+| Content object ID | `286259555c0bdd521d9b571868bdd3a2f0312c337ece16c43b8d78ffc246a12e` (A.8.3) |
+
+A.10.2. The item record: title `hello.txt`, modified 1700000000000, size 5, media type `text/plain`, metadata `{"mode": 420}`, and the content object above. The stored bytes (122 bytes) are:
+
+```
+a30004010102a8015022222222222222222222222222222222024e646f63732f68656c6c6f2e747874036968656c6c6f2e747874041b0000018bcfe568000605076a746578742f706c61696e08a1646d6f64651901a409815820286259555c0bdd521d9b571868bdd3a2f0312c337ece16c43b8d78ffc246a12e
+```
+
+The object ID (type ID 4) is `25306b653396b5fc2c2fe63cadd537d25a4380bbd717db64771b54303248dd8d`.
+
+A.10.3. The first delta entry of the journal: sequence number 1, no parent, snapshot time 1700000001000, no connector cursor, one changed item (a new one), and no deleted items. The stored bytes (163 bytes) are:
+
+```
+a30005010102a60150222222222222222222222222222222220201045033333333333333333333333333333333051b0000018bcfe56be80781835820b19168afa67b7e95eb7000c5f93f73444e09b92245b5232d0d287187e6a867f6582025306b653396b5fc2c2fe63cadd537d25a4380bbd717db64771b54303248dd8d815820286259555c0bdd521d9b571868bdd3a2f0312c337ece16c43b8d78ffc246a12e0880
+```
+
+The object ID (type ID 5) is `7e1d2bde0b19face9b813766be8fde43a9bbccfd97d1144a941f289b5ac7b071`.
+
+A.10.4. The snapshot header: no item map root, no parent snapshot, the journal position of A.10.3 (the delta entry and sequence 1), statistics for 1 item of 5 bytes, and a copy of the essential fields of the vault config of A.9.4 (the read public key is the same 32-byte placeholder). The stored bytes (198 bytes) are:
+
+```
+a30006010102a7015022222222222222222222222222222222025033333333333333333333333333333333031b0000018bcfe56be80658207e1d2bde0b19face9b813766be8fde43a9bbccfd97d1144a941f289b5ac7b071070108a20101020509a6010003501111111111111111111111111111111104727863686163686132302d706f6c79313330350566626c616b6533066f782d77696e672d64726166742d3036075820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+```
+
+A.10.5. The file of the snapshot header (see 3.3.7.1): 24 bytes of `04` as the nonce, then the encryption with the snapshot header key of A.9.3 (`6f5e6da437a1f6651279a3b50bddffada3bcfde1573ba1285b41cba6fd460f61`) and empty associated data. The file (238 bytes) has the name `33333333333333333333333333333333`:
+
+```
+0404040404040404040404040404040404040404040404043fd86957fce00c0fb675d983ef209fee009fbfc3077e3f05d185b85623368b121a82fee11d28bcd7e0f51b14d7d91e8c75ecbccdfb3af3b3df7f5ca71fb7edafee08114c58fc9201e6ada754da09da912d4629ad6ba905c2ce2d92fa8ba85b0520eb762373ff5f09a1ab845e52ecd159d9d657246ecc7d415c6e8add8f1a020e9644d3d6eb55e71b0f866203bfcc37a854c6519851dafe949c570e6085b419c273cde6d5ed6fecedf4f43e7846d1af9489577e26714b46662ca1f852040748755ef0bcc0e7bd9928830782f47d4c842bc35d1e57f2be
 ```
