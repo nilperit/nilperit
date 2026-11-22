@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 nilperit-format.workspace = true
 nilperit-crypto.workspace = true
+blake3 = { version = "1", default-features = false }
 
 [lints]
 workspace = true

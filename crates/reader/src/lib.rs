@@ -13,11 +13,13 @@ extern crate alloc;
 
 pub mod layout;
 pub mod memory_target;
+pub mod pack;
 pub mod target;
 #[cfg(test)]
 mod test_util;
 pub mod vault;
 
 pub use memory_target::MemoryTarget;
+pub use pack::{Pack, PackOpenError};
 pub use target::{Target, TargetError};
 pub use vault::{Vault, VaultError};
