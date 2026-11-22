@@ -19,6 +19,7 @@ nilperit-reader = { path = "crates/reader" }
 nilperit-writer = { path = "crates/writer" }
 nilperit-target-fs = { path = "crates/target-fs" }
 nilperit-connector-fs = { path = "crates/connector-fs" }
+nilperit-fuzz = { path = "crates/fuzz" }
 
 [workspace.lints.rust]
 # Allowed only at a single site with a `// SAFETY:` comment (see AGENTS.md).
@@ -26,3 +27,31 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = "warn"
+
+# The tests run the cryptography and the decompression many times (the mutation tests run them
+# thousands of times). Without optimization they are very slow in a debug build. Only these
+# dependencies are optimized: the code of NilPerit itself stays as the debug build has it.
+[profile.dev.package.blake3]
+opt-level = 3
+[profile.dev.package.chacha20]
+opt-level = 3
+[profile.dev.package.poly1305]
+opt-level = 3
+[profile.dev.package.chacha20poly1305]
+opt-level = 3
+[profile.dev.package.ml-kem]
+opt-level = 3
+[profile.dev.package.module-lattice]
+opt-level = 3
+[profile.dev.package.x-wing]
+opt-level = 3
+[profile.dev.package.x25519-dalek]
+opt-level = 3
+[profile.dev.package.curve25519-dalek]
+opt-level = 3
+[profile.dev.package.sha3]
+opt-level = 3
+[profile.dev.package.keccak]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3

@@ -418,6 +418,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nilperit-fuzz"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "minicbor",
+ "miniz_oxide",
+ "nilperit-crypto",
+ "nilperit-format",
+ "nilperit-reader",
+ "nilperit-writer",
+ "rand_core",
+]
+
+[[package]]
 name = "nilperit-reader"
 version = "0.0.0"
 dependencies = [
