@@ -18,12 +18,13 @@
 //!
 //! Reading is strict: any other text is an error.
 
+use crate::secret_file::{SecretFileError, read_private_text};
 use nilperit_crypto::{DedupKey, ReadPublicKey, RootSeed, WriterKey};
 use nilperit_format::VaultId;
 use nilperit_writer::Credential;
 use std::fmt;
-use std::fs::{self, DirBuilder, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::fs::{self, DirBuilder, OpenOptions};
+use std::io::{self, Write};
 use std::path::Path;
 use zeroize::Zeroizing;
 
@@ -146,28 +147,13 @@ pub fn write_credential(
 ///
 /// A file that other users can read is refused (on Unix).
 pub fn load_credential(path: &Path) -> Result<(VaultId, Credential), CredentialError> {
-    let file = File::open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() {
-        return Err(CredentialError::Format("it is not a file"));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if metadata.permissions().mode() & 0o077 != 0 {
-            return Err(CredentialError::Permissions);
-        }
-    }
-    let mut text = Zeroizing::new(String::new());
-    let size = file.take(MAX_SIZE).read_to_string(&mut text);
-    match size {
-        Ok(size) if (size as u64) < MAX_SIZE => {}
-        Ok(_) => return Err(CredentialError::Format("it is too large")),
-        Err(e) if e.kind() == io::ErrorKind::InvalidData => {
-            return Err(CredentialError::Format("it is not text"));
-        }
-        Err(e) => return Err(e.into()),
-    }
+    let text = read_private_text(path, MAX_SIZE).map_err(|e| match e {
+        SecretFileError::NotAFile => CredentialError::Format("it is not a file"),
+        SecretFileError::Permissions => CredentialError::Permissions,
+        SecretFileError::TooLarge => CredentialError::Format("it is too large"),
+        SecretFileError::NotText => CredentialError::Format("it is not text"),
+        SecretFileError::Io(kind) => CredentialError::Io(kind),
+    })?;
     parse(&text)
 }
 

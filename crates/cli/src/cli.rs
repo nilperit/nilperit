@@ -22,6 +22,10 @@ pub enum Command {
 
     /// Back up a folder into a vault. Only what is new or changed is written.
     Sync(SyncArgs),
+
+    /// List the sources of a vault, or the items of one source. This needs the recovery
+    /// phrase.
+    Ls(LsArgs),
 }
 
 #[derive(Debug, Args)]
@@ -65,4 +69,34 @@ pub struct SyncArgs {
     /// is shown, because a name can say a lot about its owner.
     #[arg(short, long)]
     pub verbose: bool,
+}
+
+/// Where the recovery phrase comes from. The phrase is never an argument or an
+/// environment variable: both can be seen by other users and end up in logs.
+#[derive(Debug, Args)]
+pub struct PhraseArgs {
+    /// A file with the recovery phrase. Only you may be able to read it. By default the
+    /// phrase is typed in a terminal without showing it, or read from the input when
+    /// there is no terminal.
+    #[arg(long, value_name = "FILE")]
+    pub phrase_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub struct LsArgs {
+    /// The folder of the vault.
+    #[arg(long, value_name = "FOLDER")]
+    pub vault: PathBuf,
+
+    /// List the items of the source with this name (see `sync --name`).
+    #[arg(long, value_name = "NAME", conflicts_with = "source_id")]
+    pub name: Option<String>,
+
+    /// List the items of the source with this ID (32 hexadecimal characters, as the
+    /// list of sources shows it).
+    #[arg(long, value_name = "ID")]
+    pub source_id: Option<String>,
+
+    #[command(flatten)]
+    pub phrase: PhraseArgs,
 }

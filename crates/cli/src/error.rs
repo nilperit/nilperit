@@ -2,6 +2,8 @@
 //! recovery phrase or content.
 
 use crate::credential::CredentialError;
+use crate::phrase::PhraseError;
+use nilperit_reader::{JournalError, VaultError};
 use nilperit_writer::{InitError, LockError, SyncError};
 use std::fmt;
 use std::io;
@@ -38,6 +40,16 @@ pub enum CliError {
     Lock(LockError),
     /// The run failed.
     Sync(SyncError),
+    /// The recovery phrase cannot be had or is not valid.
+    Phrase(PhraseError),
+    /// The vault cannot be opened with the keys of the recovery phrase.
+    Vault(VaultError),
+    /// The ID of a source is not 32 hexadecimal characters.
+    BadSourceId,
+    /// The vault has no source with that name or ID.
+    NoSuchSource,
+    /// The journal of a source cannot be read. Part of the vault is damaged or missing.
+    Journal(JournalError),
     /// The vault was made, and the credential could not be saved. The text says what
     /// the person can do.
     VaultMadeWithoutCredential(Box<CliError>),
@@ -62,6 +74,14 @@ impl fmt::Display for CliError {
                 "another run has the writer lock of this vault (its last sign of life was {age} s ago). \
                  If no run is active, the lock can be taken over after {stale} s of silence"
             ),
+            Self::Phrase(e) => e.fmt(f),
+            Self::Vault(VaultError::NoValidConfig) => f.write_str(
+                "no valid vault config: the folder is not a vault, its config is damaged, or the recovery phrase is not the phrase of this vault",
+            ),
+            Self::Vault(e) => e.fmt(f),
+            Self::BadSourceId => f.write_str("a source ID is 32 hexadecimal characters"),
+            Self::NoSuchSource => f.write_str("the vault has no source with that name or ID"),
+            Self::Journal(e) => write!(f, "the journal of the source cannot be read: {e}"),
             Self::Lock(e) => e.fmt(f),
             Self::Sync(e) => e.fmt(f),
             Self::NoConfigFolder => f.write_str(
@@ -90,6 +110,12 @@ impl From<InitError> for CliError {
 impl From<CredentialError> for CliError {
     fn from(e: CredentialError) -> Self {
         Self::Credential(e)
+    }
+}
+
+impl From<PhraseError> for CliError {
+    fn from(e: PhraseError) -> Self {
+        Self::Phrase(e)
     }
 }
 

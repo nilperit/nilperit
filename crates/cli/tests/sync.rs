@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{TempDir, block_on, env, nilperit, phrase, vault_id};
+use common::{Made, TempDir, block_on, env, init, nilperit, phrase, vault_id, write};
 use nilperit_cli::Environment;
 use nilperit_crypto::RootSeed;
 use nilperit_format::{LockFile, SourceId};
@@ -14,30 +14,6 @@ use nilperit_writer::{Credential, source_id};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-
-/// A vault that `init` made, with what the person was given.
-struct Made {
-    vault: std::path::PathBuf,
-    seed: RootSeed,
-    id: String,
-}
-
-fn init(dir: &TempDir, name: &str) -> Made {
-    let vault = dir.0.join(name);
-    let outcome = nilperit(&["init", vault.to_str().unwrap()], &env(dir));
-    assert!(outcome.succeeded(), "{}", outcome.err);
-    Made {
-        vault,
-        seed: RootSeed::from_phrase(&phrase(&outcome.out)).unwrap(),
-        id: vault_id(&outcome.out),
-    }
-}
-
-fn write(root: &Path, path: &str, data: &[u8]) {
-    let full = root.join(path);
-    fs::create_dir_all(full.parent().unwrap()).unwrap();
-    fs::write(full, data).unwrap();
-}
 
 /// What a restore finds in the vault for a source: native ID and bytes of each item.
 fn restored(made: &Made, name: &str) -> BTreeMap<Vec<u8>, Vec<u8>> {
@@ -239,9 +215,11 @@ fn a_vault_inside_the_folder_does_not_back_itself_up() {
     let vault = folder.join("my-vault");
     let outcome = nilperit(&["init", vault.to_str().unwrap()], &env(&dir));
     assert!(outcome.succeeded());
+    let words = phrase(&outcome.out);
     let made = Made {
         vault,
-        seed: RootSeed::from_phrase(&phrase(&outcome.out)).unwrap(),
+        seed: RootSeed::from_phrase(&words).unwrap(),
+        phrase: words,
         id: vault_id(&outcome.out),
     };
     assert!(
@@ -268,6 +246,7 @@ fn the_credential_must_be_there_and_must_be_for_this_vault() {
     let nowhere = Environment {
         config_dir: Some(dir.0.join("another-config")),
         credential: None,
+        ..Environment::default()
     };
     let missing = sync(&a, &folder, &nowhere, &[]);
     assert!(missing.failed());
@@ -290,6 +269,7 @@ fn the_credential_must_be_there_and_must_be_for_this_vault() {
     let from_env = Environment {
         config_dir: None,
         credential: Some(dir.0.join(format!("config/nilperit/{}.credential", a.id))),
+        ..Environment::default()
     };
     assert!(sync(&a, &folder, &from_env, &[]).succeeded());
 

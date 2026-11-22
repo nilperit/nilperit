@@ -2,6 +2,7 @@
 
 use super::common::{load_node_credential, now_ms, read_vault_id};
 use crate::cli::SyncArgs;
+use crate::display::size;
 use crate::environment::Environment;
 use crate::error::CliError;
 use crate::exec::block_on;
@@ -173,37 +174,5 @@ fn why(failed: &FailedItem) -> String {
             "a link that cannot be followed, or a folder that cannot be listed".into()
         }
         kind => format!("{kind:?}"),
-    }
-}
-
-/// A size in bytes for a person: `1.5 MiB`.
-fn size(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
-    if bytes < 1024 {
-        return format!("{bytes} B");
-    }
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    format!("{value:.1} {}", UNITS[unit])
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sizes_are_short_for_a_person() {
-        assert_eq!(size(0), "0 B");
-        assert_eq!(size(1023), "1023 B");
-        assert_eq!(size(1024), "1.0 KiB");
-        assert_eq!(size(1536), "1.5 KiB");
-        assert_eq!(size(5 * 1024 * 1024), "5.0 MiB");
-        assert_eq!(size(3 * 1024 * 1024 * 1024), "3.0 GiB");
-        // 2^64 bytes are 2^24 TiB.
-        assert_eq!(size(u64::MAX), "16777216.0 TiB");
     }
 }

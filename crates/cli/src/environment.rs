@@ -6,6 +6,7 @@
 use crate::error::CliError;
 use nilperit_format::VaultId;
 use std::ffi::OsString;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 /// The surroundings of a run.
@@ -16,6 +17,9 @@ pub struct Environment {
     pub config_dir: Option<PathBuf>,
     /// The credential file that the person named in `NILPERIT_CREDENTIAL`.
     pub credential: Option<PathBuf>,
+    /// Whether the input is a terminal. A command that needs the recovery phrase then
+    /// asks for it, without showing what is typed. Otherwise it reads it from the input.
+    pub interactive: bool,
 }
 
 impl Environment {
@@ -35,6 +39,7 @@ impl Environment {
         Self {
             config_dir,
             credential: var("NILPERIT_CREDENTIAL").map(PathBuf::from),
+            interactive: std::io::stdin().is_terminal(),
         }
     }
 

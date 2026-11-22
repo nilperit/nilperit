@@ -11,6 +11,7 @@ fn main() -> ExitCode {
     run(
         std::env::args_os(),
         &Environment::from_process(),
+        &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
         &mut std::io::stderr(),
         &mut rng,
