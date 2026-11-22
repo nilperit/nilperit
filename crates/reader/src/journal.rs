@@ -127,10 +127,13 @@ impl<T: Target> Vault<T> {
         index: &PackIndex,
         id: &ObjectId,
     ) -> Result<DeltaEntry, JournalError> {
-        let stored = self.read_indexed(index, id).await.map_err(|e| match e {
-            ObjectReadError::NotInPack => JournalError::MissingEntry(*id),
-            e => JournalError::Unreadable(*id, e),
-        })?;
+        let stored = self
+            .read_indexed(index, id, DeltaEntry::TYPE_ID)
+            .await
+            .map_err(|e| match e {
+                ObjectReadError::NotInPack => JournalError::MissingEntry(*id),
+                e => JournalError::Unreadable(*id, e),
+            })?;
         DeltaEntry::decode(&stored).map_err(|e| JournalError::BadEntry(*id, e))
     }
 }

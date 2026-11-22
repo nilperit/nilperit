@@ -81,19 +81,21 @@ impl<T: Target> Vault<T> {
         Ok(index)
     }
 
-    /// Reads an object from the first pack that gives it. When no pack gives it,
-    /// the error is the one of the first pack.
+    /// Reads an object from the first pack that gives it. `object_type` is the
+    /// type that the caller expects. When no pack gives the object, the error is
+    /// the one of the first pack.
     pub async fn read_indexed(
         &self,
         index: &PackIndex,
         id: &ObjectId,
+        object_type: u32,
     ) -> Result<Vec<u8>, ObjectReadError> {
         let mut first_error = None;
         for name in index.packs_of(id) {
             let Some(pack) = index.packs.get(name) else {
                 continue;
             };
-            match self.read_object(pack, id).await {
+            match self.read_object(pack, id, object_type).await {
                 Ok(stored) => return Ok(stored),
                 Err(e) => {
                     first_error.get_or_insert(e);
@@ -151,12 +153,15 @@ mod tests {
         assert_eq!(index.packs_of(&ids_a[0]), [pack_name(&a)]);
         assert_eq!(index.packs_of(&ids_b[0]), [pack_name(&b)]);
         assert!(index.contains(&ids_a[1]));
-        for (id, text) in [
-            (&ids_a[0], &b"one"[..]),
-            (&ids_a[1], b"two"),
-            (&ids_b[0], b"three"),
+        for (id, kind, text) in [
+            (&ids_a[0], 1, &b"one"[..]),
+            (&ids_a[1], 2, b"two"),
+            (&ids_b[0], 1, b"three"),
         ] {
-            assert_eq!(block_on(vault.read_indexed(&index, id)).unwrap(), text);
+            assert_eq!(
+                block_on(vault.read_indexed(&index, id, kind)).unwrap(),
+                text
+            );
         }
     }
 
@@ -168,7 +173,7 @@ mod tests {
         let unknown = ObjectId::from_bytes([0; 32]);
         assert!(!index.contains(&unknown));
         assert!(matches!(
-            block_on(vault.read_indexed(&index, &unknown)),
+            block_on(vault.read_indexed(&index, &unknown, 1)),
             Err(ObjectReadError::NotInPack)
         ));
     }
@@ -203,7 +208,7 @@ mod tests {
         assert_eq!(index.skipped().len(), 1);
         assert_eq!(index.skipped()[0].0, bad_name);
         assert_eq!(
-            block_on(vault.read_indexed(&index, &ids[0])).unwrap(),
+            block_on(vault.read_indexed(&index, &ids[0], 1)).unwrap(),
             b"good"
         );
     }
@@ -228,7 +233,7 @@ mod tests {
         let index = block_on(vault.scan_packs()).unwrap();
         assert_eq!(index.packs_of(&ids[0]).len(), 2);
         assert_eq!(
-            block_on(vault.read_indexed(&index, &ids[0])).unwrap(),
+            block_on(vault.read_indexed(&index, &ids[0], 1)).unwrap(),
             b"shared"
         );
     }
@@ -249,7 +254,7 @@ mod tests {
         let vault = vault(&[&damaged[0], &damaged[1]]);
         let index = block_on(vault.scan_packs()).unwrap();
         assert!(matches!(
-            block_on(vault.read_indexed(&index, &ids[0])),
+            block_on(vault.read_indexed(&index, &ids[0], 1)),
             Err(ObjectReadError::NotAuthentic)
         ));
     }

@@ -68,6 +68,7 @@ impl TryCryptoRng for TestRng {}
 
 /// An object to put in a test pack. The `claim_*` fields let a test write an
 /// object table that is wrong on purpose.
+#[derive(Clone)]
 pub struct TestObject {
     pub object_type: u32,
     pub key_class: KeyClass,
@@ -317,6 +318,29 @@ pub fn entry_object(entry: &DeltaEntry) -> (TestObject, ObjectId) {
     );
     (
         TestObject::new(5, KeyClass::W, Compression::None, &stored),
+        id,
+    )
+}
+
+/// An object of any type as a pack object, and its object ID.
+pub fn typed_object(
+    object_type: u32,
+    key_class: KeyClass,
+    stored: &[u8],
+) -> (TestObject, ObjectId) {
+    let id = ObjectId::from_bytes(
+        TestKeys::from_seed(&test_seed())
+            .dedup
+            .domain_keys()
+            .object_id(object_type, stored),
+    );
+    let compression = if key_class == KeyClass::R {
+        Compression::Deflate
+    } else {
+        Compression::None
+    };
+    (
+        TestObject::new(object_type, key_class, compression, stored),
         id,
     )
 }

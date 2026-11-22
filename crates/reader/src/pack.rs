@@ -74,6 +74,8 @@ pub enum ObjectReadError {
     Target(TargetError),
     /// The object table of the pack has no entry with this object ID.
     NotInPack,
+    /// The entry has another type than the caller expects.
+    WrongType,
     /// The pack key of an R object cannot be opened because the pack uses an
     /// algorithm that this code does not know.
     UnknownAlgorithm,
@@ -97,6 +99,7 @@ impl fmt::Display for ObjectReadError {
         match self {
             Self::Target(e) => e.fmt(f),
             Self::NotInPack => f.write_str("the object is not in the pack"),
+            Self::WrongType => f.write_str("the object has another type than expected"),
             Self::UnknownAlgorithm => f.write_str("the pack uses an unknown algorithm"),
             Self::Seal(e) => write!(f, "the seal does not open: {e}"),
             Self::NotAuthentic => f.write_str("the object is not authentic"),
@@ -183,12 +186,17 @@ impl Pack {
 
     /// Reads one object and returns its stored bytes (format.md 6.7.5, step 5).
     ///
+    /// The caller says the type that it expects. An entry with another type gives
+    /// `WrongType` before any byte is read: a chunk ID must not give the bytes of
+    /// another kind of object.
+    ///
     /// It checks the tag, decompresses to exactly the unpacked size, and checks the
     /// object ID. It returns no byte before all of these checks pass.
     pub async fn read_object<T: Target>(
         &self,
         target: &T,
         id: &ObjectId,
+        object_type: u32,
         keys: &Keys,
     ) -> Result<Vec<u8>, ObjectReadError> {
         let entry = self
@@ -197,6 +205,9 @@ impl Pack {
             .iter()
             .find(|entry| entry.object_id == *id)
             .ok_or(ObjectReadError::NotInPack)?;
+        if entry.object_type != object_type {
+            return Err(ObjectReadError::WrongType);
+        }
         // Check the size first, so that a reader with little memory stops early.
         let unpacked_size =
             usize::try_from(entry.unpacked_size).map_err(|_| ObjectReadError::TooLarge)?;
@@ -452,7 +463,15 @@ mod tests {
         id: &ObjectId,
         keys: &Keys,
     ) -> Result<Vec<u8>, ObjectReadError> {
-        block_on(pack.read_object(target, id, keys))
+        // The tests ask for the type that the table gives, except for an object
+        // that is not in the table.
+        let object_type = pack
+            .table()
+            .entries
+            .iter()
+            .find(|entry| entry.object_id == *id)
+            .map_or(0, |entry| entry.object_type);
+        block_on(pack.read_object(target, id, object_type, keys))
     }
 
     #[test]
@@ -470,6 +489,15 @@ mod tests {
         let pack = block_on(Pack::open(&target, name(), &writer())).unwrap();
         let result = read(&pack, &target, &oid(A8_CHUNK_ID), &a8_keys());
         assert!(matches!(result, Err(ObjectReadError::UnknownAlgorithm)));
+    }
+
+    #[test]
+    fn rejects_an_object_of_another_type_than_expected() {
+        let target = target_with(unhex(PACK_HEX));
+        let pack = block_on(Pack::open(&target, name(), &writer())).unwrap();
+        // The content object has type 2.
+        let result = block_on(pack.read_object(&target, &oid(A8_CONTENT_ID), 1, &a8_keys()));
+        assert!(matches!(result, Err(ObjectReadError::WrongType)));
     }
 
     #[test]

@@ -11,6 +11,7 @@
 
 extern crate alloc;
 
+pub mod content;
 pub mod index;
 pub mod journal;
 pub mod keys;
@@ -23,6 +24,7 @@ pub mod target;
 mod test_util;
 pub mod vault;
 
+pub use content::ContentError;
 pub use index::PackIndex;
 pub use journal::{ItemState, JournalError, SourceState};
 pub use keys::Keys;
