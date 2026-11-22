@@ -35,9 +35,6 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Test
-        run: cargo test --workspace --locked
-
       - name: Build the reader side for wasm32
         run: >
           cargo check --locked --target wasm32-unknown-unknown
@@ -46,16 +43,30 @@ jobs:
       - name: Check crate layering
         run: scripts/check-layering.sh
 
-  # The tests on Windows. Windows has other rules than Linux: the separator of a path, the
-  # names that a file cannot have, files that cannot be replaced while another program
-  # has them open, and no permission bits. Only the tests run here: format, clippy, the
-  # wasm32 build and the layering check do not depend on the system, and run on Linux.
-  test-windows:
-    # A fixed version, like the Linux job, so that a new image does not change the result.
-    runs-on: windows-2025
+  # The tests, on each system that the program runs on. The systems have other rules: the
+  # separator of a path, the names that a file cannot have, files that cannot be replaced
+  # while another program has them open, and the permission bits. Each system is a check of
+  # its own with a fixed name (`test-linux`, `test-windows`, `test-macos`), so that each can
+  # be required in the rules of the repository. Format, clippy, the wasm32 build and the
+  # layering check do not depend on the system, and run once, in the job `rust`.
+  test:
+    name: test-${{ matrix.system }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
+    strategy:
+      # A system that fails does not cancel the others: one run shows all the failures.
+      fail-fast: false
+      matrix:
+        include:
+          # Fixed versions, so that a new image does not change the result by surprise.
+          - system: linux
+            runner: ubuntu-26.04
+          - system: windows
+            runner: windows-2025
+          - system: macos
+            runner: macos-15
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
