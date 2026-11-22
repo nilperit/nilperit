@@ -32,6 +32,31 @@ pub fn pack_path(name: &PackName) -> String {
     format!("{PACKS_DIR}/{}/{name}", &name[..2])
 }
 
+/// Reads the name of a pack from a path in `packs/`. It returns `None` for a path
+/// that is not `packs/<two characters>/<64 lowercase hexadecimal characters>`
+/// where the two characters are the first two of the name. Such a file is not a
+/// pack, for example a temporary file or an orphan from another program.
+pub fn parse_pack_path(path: &str) -> Option<PackName> {
+    let rest = path.strip_prefix(PACKS_DIR)?.strip_prefix('/')?;
+    let (dir, name) = rest.split_once('/')?;
+    if name.len() != 64 || !name.starts_with(dir) || dir.len() != 2 {
+        return None;
+    }
+    let mut bytes = [0u8; 32];
+    for (byte, pair) in bytes.iter_mut().zip(name.as_bytes().chunks(2)) {
+        *byte = (hex_value(pair[0])? << 4) | hex_value(pair[1])?;
+    }
+    Some(PackName::from_bytes(bytes))
+}
+
+fn hex_value(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        _ => None,
+    }
+}
+
 /// The path of a snapshot header (see 5.9.4).
 pub fn snapshot_path(id: &SnapshotId) -> String {
     format!("{SNAPSHOTS_DIR}/{id}")
@@ -44,6 +69,33 @@ mod tests {
     #[test]
     fn hex_is_lowercase() {
         assert_eq!(hex(&[0x00, 0xab, 0xff]), "00abff");
+    }
+
+    #[test]
+    fn parse_pack_path_reads_what_pack_path_writes() {
+        let name = PackName::from_bytes(core::array::from_fn(|i| (i * 9) as u8));
+        assert_eq!(parse_pack_path(&pack_path(&name)), Some(name));
+    }
+
+    #[test]
+    fn parse_pack_path_rejects_other_files() {
+        let good = pack_path(&PackName::from_bytes([0xab; 32]));
+        assert!(parse_pack_path(&good).is_some());
+        let name = "ab".repeat(32);
+        for bad in [
+            "packs",
+            "packs/ab",
+            "packs/ab/abab",
+            &format!("packs/cd/{name}"),
+            &format!("packs/ab/{}", name.to_uppercase()),
+            &format!("packs/ab/{name}.tmp"),
+            &format!("packs/ab/x/{name}"),
+            &format!("other/ab/{name}"),
+            &format!("packs/abc/{name}"),
+            &format!("packs/ab/{}", "zz".repeat(32)),
+        ] {
+            assert!(parse_pack_path(bad).is_none(), "{bad}");
+        }
     }
 
     #[test]
