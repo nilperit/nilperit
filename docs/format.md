@@ -46,18 +46,32 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.2.1. NilPerit derives all keys from the root seed. Each key has its own context string (domain separation).
 
-3.2.2. Key derivation function: BLAKE3 `derive_key` mode. TBD: final choice and exact context strings.
+3.2.2. Key derivation function: BLAKE3 `derive_key` mode. TBD: final choice, and the context strings of the keys other than the domain keys (see 3.2.5).
 
 3.2.3. The derived keys are:
 
 | Key | Type | Holder | Purpose |
 |---|---|---|---|
 | Read key | Hybrid X25519 + ML-KEM-768 key pair | Owner (private part) | Opens item records and chunks |
-| Dedup key | 32-byte key for keyed BLAKE3 | Node | Makes object IDs, item keys, and content hashes |
+| Dedup key | 32-byte key | Node | Source of the domain keys (see 3.2.5) |
 | Writer key | 32-byte symmetric key | Node | Encrypts objects that the node reads again |
 | Chunker seed | 32 bytes | Node | Selects chunk cut points |
 
 3.2.4. The node credential is: the public part of the read key, the dedup key, the writer key, and the chunker seed. A node MUST NOT have the private part of the read key, unless the owner gives it explicitly.
+
+3.2.5. **Hash domains.** NilPerit makes three kinds of keyed hash with the dedup key. Each kind is a hash domain. For each hash domain, NilPerit derives a domain key: BLAKE3 `derive_key` with the context string of the domain and the dedup key as key material. The domain key is 32 bytes.
+
+| Hash domain | Context string |
+|---|---|
+| Object ID | `nilperit 2026-11-22 object-id` |
+| Item key | `nilperit 2026-11-22 item-key` |
+| Content hash | `nilperit 2026-11-22 content-hash` |
+
+3.2.6. A hash in a hash domain is the keyed BLAKE3 hash with the domain key of that domain. Length: 32 bytes. Because the domain keys are different, a value of one hash domain never equals a value of another hash domain.
+
+3.2.7. A new kind of hash MUST have its own hash domain. The context strings are fixed for a format version. In a draft version, they can change.
+
+3.2.8. A context string has the form: application, date, purpose. This is the convention of BLAKE3 for `derive_key`. The date has no meaning. It is not a version. Only the uniqueness of the string matters.
 
 ### 3.3. Encryption
 
@@ -118,7 +132,11 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 4.6.2. **Strict decoding.** A decoder MUST reject stored bytes that are not deterministic CBOR. This includes: an integer or length that is not in the shortest form; an indefinite-length item; a map with duplicate keys or keys that are not in the order of RFC 8949, section 4.2.1; a text string that is not valid UTF-8; and bytes after the end of the object. Two different byte strings therefore cannot give the same object. A decoder MUST limit the nesting depth. The limit of this draft is 32.
 
-4.7. **Object IDs.** The ID of each object is the keyed BLAKE3 hash of its plaintext encoding. The key is the dedup key. The hash input starts with the object type ID (domain separation). Length: 32 bytes. TBD: exact framing of the type ID.
+4.7. **Object IDs.** The ID of each object is the hash of its stored bytes in the hash domain "object ID" (see 3.2.5). The hash input is the type ID as a 4-byte unsigned integer (little-endian), followed by the stored bytes. Length: 32 bytes.
+
+4.7.1. The type ID comes from the object table (see 6.3.1). For an enveloped object, the type ID in the object table MUST be equal to the type in the envelope. A reader MUST reject the object when they are different.
+
+4.7.2. Each object type is either enveloped or raw. The schema dictionary states which. The stored bytes of an enveloped object are the encoded envelope (see 4.4.2). The stored bytes of a raw object are its plaintext before compression. A raw object has no type in its bytes. For this reason, a raw object type MUST have key class R. Today, only the chunk is raw.
 
 4.8. Because the ID depends only on the plaintext, the same object has the same ID in all replicas. The random nonce of the encryption does not change the ID.
 
@@ -154,7 +172,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 ### 5.3. Content object (truth)
 
-5.3.1. Fields: list of chunk IDs (in order), total length, keyed BLAKE3 hash of the full plaintext (key: dedup key, with its own domain separation tag), chunking profile ID.
+5.3.1. Fields: list of chunk IDs (in order), total length, keyed BLAKE3 hash of the full plaintext (hash domain: content hash, see 3.2.5), chunking profile ID.
 
 5.3.2. A content object has key class W. This lets the node find all chunks that an item uses, without the read key.
 
@@ -226,9 +244,9 @@ This procedure can select an entry that was complete but not committed. That is 
 
 5.6.4. Leaf entries of an archive tree and of an archive map: item key and item record ID → content object IDs, time first seen, time last seen.
 
-5.6.5. The item key is the keyed BLAKE3 hash of the source ID and the native ID. The key is the dedup key. The hash input starts with a domain separation tag for item keys.
+5.6.5. The item key is the hash of the source ID and the native ID in the hash domain "item key" (see 3.2.5). The hash input is: the length of the source ID as a 4-byte unsigned integer (little-endian), the source ID, the length of the native ID as a 4-byte unsigned integer (little-endian), and the native ID. The lengths make the input unambiguous.
 
-5.6.6. All keyed hashes that use the dedup key (object IDs, item keys, content hashes) MUST use different domain separation tags. Then a value of one kind can never be equal to a value of another kind.
+5.6.6. Object IDs, item keys, and content hashes use different hash domains (see 3.2.5).
 
 ### 5.7. Item map (cache)
 
@@ -410,7 +428,7 @@ The items below are not fixed in this draft:
 - Hybrid KEM combiner construction (3.3.2); candidate: X-Wing (X25519 + ML-KEM-768).
 - ML-KEM implementation (3.3.2): RustCrypto `ml-kem` has never had an independent audit; `libcrux-ml-kem` (formally verified) is the main alternative.
 - Per-pack derivation of the W key (3.3.3).
-- Framing of the type ID in object IDs, and the domain separation tags (4.7, 5.6.6).
+- Compression of objects (5.1.3, 6.3.1): the hash uses the bytes before compression, and the object table has no field for the compression algorithm. Where a reader finds it is not decided.
 - Exact values of the chunking profiles (5.2.4).
 - Pack header layout and magic bytes (6.3).
 - Number and names of vault config copies (7.2).
@@ -418,3 +436,55 @@ The items below are not fixed in this draft:
 - Contents and names in recovery/ (7.3).
 - Parity data format (10.4).
 - Object type IDs and the field numbers of each object type (schema dictionary).
+
+## Appendix A. Test vectors
+
+These vectors are not normative. An implementation can use them to check itself. A different BLAKE3 implementation (the Python `blake3` package) made the hash values. All values are in hexadecimal.
+
+### A.1. Envelope
+
+A.1.1. Type 5, schema 1, body `{1: 7, 2: "ab"}`:
+
+```
+a3 00 05 01 01 02 a2 01 07 02 62 61 62
+```
+
+### A.2. Hash domains
+
+A.2.1. The dedup key is the 32 bytes `00 01 02 ... 1f`.
+
+A.2.2. The domain keys (see 3.2.5):
+
+| Hash domain | Domain key |
+|---|---|
+| Object ID | `7a5a3c46561ae064a4d4b3451e3da054f24dec4aabca9289bbd86ac9d2272202` |
+| Item key | `0c715b92de06677df044d97ee6d42629fbb18f268799e59f5b444da951e07dc1` |
+| Content hash | `a4190220377899bde0d628774ca52f067303395c2c18784c9bb99cbd9a964cb8` |
+
+### A.3. Object IDs
+
+A.3.1. The stored bytes are the envelope `a3 00 05 01 01 02 a0` (type 5, schema 1, empty body). The hash input is the type ID as 4 bytes (little-endian), then the stored bytes (see 4.7).
+
+| Type ID | Stored bytes | Object ID |
+|---|---|---|
+| 5 | the envelope above | `d7692ea1f63147927d8aaa890330123e9c2991cb6b84b5c86379614092707744` |
+| 1 | the envelope above | `c71aea3d61bec2b68e7f2de593e86ab129268d43f78314b5c21c9830993070aa` |
+| 1 | empty | `6578b1b6af05c75c4b025a910b22e152925a12f526fe40dea8ca134dbb64cddf` |
+
+A.3.2. The second row shows that the type ID changes the object ID for the same bytes.
+
+### A.4. Item keys
+
+A.4.1. The hash input is the length of the source ID, the source ID, the length of the native ID, and the native ID. Each length is 4 bytes (little-endian) (see 5.6.5). The IDs in the table are ASCII text.
+
+| Source ID | Native ID | Item key |
+|---|---|---|
+| `ab` | `c` | `1dc64f7e4a20b22b43463d82b7a5e732ed4b375aa5c3f339705f06792910548d` |
+| `a` | `bc` | `a7e0457e53fc93fdd9d3a73b29ddfbbe09bdad9f5b2ae18d3876ec296a7f60d2` |
+| `gmail` | `msg-1` | `5bedc3e15a00253238b061e48e4f2323246e8941c2d9fec30c59fd706353814d` |
+
+A.4.2. The first two rows show that moving a byte from one part to the other changes the item key.
+
+### A.5. Content hash
+
+A.5.1. The content hash of the 5 bytes `hello` (ASCII) is `ba57c82d8e9d4648188e4ef7eac18ec0c841bd7f817d115e1ed84bc0c05cb20e`.

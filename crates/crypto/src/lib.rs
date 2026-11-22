@@ -3,3 +3,11 @@
 //! Layering (ADR 0014): no I/O, builds for `wasm32-unknown-unknown`, depends on
 //! no other NilPerit crate. Never implement cryptographic primitives here; use
 //! reviewed crates and record their audit status in the pull request.
+//!
+//! This crate is `no_std`.
+
+#![no_std]
+
+pub mod hash;
+
+pub use hash::{ContentHasher, DedupKey, DomainKey, DomainKeys, HASH_LEN, HashDomain, LengthError};
