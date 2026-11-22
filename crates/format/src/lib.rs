@@ -10,7 +10,12 @@
 extern crate alloc;
 
 pub mod canonical;
+pub mod content_object;
 pub mod envelope;
+pub mod ids;
+pub mod object_type;
 
 pub use canonical::CanonicalError;
+pub use content_object::{ContentObject, ObjectError};
 pub use envelope::{Envelope, EnvelopeError};
+pub use ids::{ContentHash, HASH_LEN, ObjectId};

@@ -250,6 +250,24 @@ mod tests {
     }
 
     #[test]
+    fn content_object_id_vector() {
+        // The stored bytes of format.md A.6.2, as bytes. Type ID 2.
+        let mut stored = Vec::from([0xa3, 0x00, 0x02, 0x01, 0x01, 0x02, 0xa4, 0x01, 0x82]);
+        for byte in [0x11u8, 0x22] {
+            stored.extend([0x58, 0x20]);
+            stored.extend([byte; 32]);
+        }
+        stored.extend([0x02, 0x1a, 0x00, 0x04, 0x93, 0xe0, 0x03, 0x58, 0x20]);
+        stored.extend([0x33; 32]);
+        stored.extend([0x04, 0x01]);
+        assert_eq!(stored.len(), 120);
+        assert_eq!(
+            hex(&dedup().domain_keys().object_id(2, &stored)),
+            "449fc1f8fb06c9aefa7fe47861cdf2f20b5af3fa1d316427cf2ddd2b504cf5e3"
+        );
+    }
+
+    #[test]
     fn item_key_vectors() {
         let keys = dedup().domain_keys();
         assert_eq!(

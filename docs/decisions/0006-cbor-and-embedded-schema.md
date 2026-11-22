@@ -19,7 +19,7 @@ Objects must stay readable for decades, possibly by tools other than NilPerit. T
 ## Consequences
 
 - Self-describing: a future reader with any CBOR tool and the dictionary can decode everything.
-- Additive evolution: decoders ignore unknown fields. This is only safe together with the no-re-encoding rule.
+- Resilience: decoders ignore unknown fields, for example fields that a later schema no longer uses. This is not how compatibility works: that comes from the format version and the per-object schema version (ADR 0011). Ignoring fields is only safe together with the no-re-encoding rule.
 - Native byte strings for hashes and keys, without base64.
 - Slightly larger than a pure binary format; the difference mostly disappears after compression.
 

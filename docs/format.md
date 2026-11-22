@@ -126,7 +126,18 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 4.4.2. The stored bytes of an object are the encoded envelope. See 4.9.
 
-4.5. A decoder MUST ignore map keys that it does not know. This lets a later schema version add fields.
+4.4.3. **Object type IDs.** The type ID is an unsigned integer that fits in 32 bits. NilPerit MUST NOT use type ID 0. NilPerit MUST NOT change or reuse a type ID. This draft defines these type IDs:
+
+| Type ID | Object type | Form |
+|---|---|---|
+| 1 | Chunk | Raw |
+| 2 | Content object | Enveloped |
+
+4.4.4. A raw object has a type ID, but no envelope (see 4.7.2). The type ID is only an input of its object ID. TBD: type IDs of the other object types.
+
+4.5. A decoder MUST ignore map keys that it does not know. This makes a decoder resilient, for example against fields that a later schema version no longer uses. It is not a compatibility mechanism: compatibility comes from the format version and the schema version (see 4.5.1 and section 12).
+
+4.5.1. A decoder MUST reject an object with a schema version that it does not know. A reader of a format version knows all schema versions of that format version and of the older format versions. An object with a higher schema version can only come from a bug or from damage, because an older reader stops when it finds a newer format version (see 12.3). Objects of different schema versions can exist in one vault, because NilPerit upgrades a vault lazily (see 12.2).
 
 4.6. The schema dictionary is in CDDL (RFC 8610). It lists each object type, each schema version, and each field: number, name, type, and description.
 
@@ -174,7 +185,18 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 ### 5.3. Content object (truth)
 
-5.3.1. Fields: list of chunk IDs (in order), total length, keyed BLAKE3 hash of the full plaintext (hash domain: content hash, see 3.2.5), chunking profile ID.
+5.3.1. A content object is an enveloped object with type ID 2 and schema version 1. Fields:
+
+| Key | Field | CBOR type | Meaning |
+|---|---|---|---|
+| 1 | chunks | Array of byte strings | The chunk IDs, in order. Each is 32 bytes. |
+| 2 | length | Unsigned integer | The total length of the plaintext content, in bytes |
+| 3 | content hash | Byte string, 32 bytes | The keyed BLAKE3 hash of the full plaintext (hash domain: content hash, see 3.2.5) |
+| 4 | chunking profile | Unsigned integer | The ID of the chunking profile (see 5.2.1). It fits in 32 bits. |
+
+5.3.1.1. The same chunk ID can appear more than once in the chunk list. A content without data has an empty chunk list and length 0.
+
+5.3.1.2. A decoder MUST reject a content object when a field is missing, or when a field has another CBOR type or size than the table gives.
 
 5.3.2. A content object has key class W. This lets the node find all chunks that an item uses, without the read key.
 
@@ -443,7 +465,8 @@ The items below are not fixed in this draft:
 - Contents and names in recovery/ (7.3).
 - Parity data format (10.4).
 - Fields of a checkpoint other than the connector cursor and the two trees (5.5.3): for example its time, and whether it has a snapshot ID. A checkpoint that compaction writes (11.3.1) does not come from a synchronization.
-- Object type IDs and the field numbers of each object type (schema dictionary).
+- Type IDs and the field numbers of the object types other than the chunk and the content object (schema dictionary).
+- The schema dictionary itself (4.6): NilPerit generates it from the Rust types. Until then, the field tables in section 5 are the only definition.
 
 ## Appendix A. Test vectors
 
@@ -496,3 +519,26 @@ A.4.2. The first two rows show that moving a byte from one part to the other cha
 ### A.5. Content hash
 
 A.5.1. The content hash of the 5 bytes `hello` (ASCII) is `ba57c82d8e9d4648188e4ef7eac18ec0c841bd7f817d115e1ed84bc0c05cb20e`.
+
+### A.6. Content object
+
+A.6.1. A content object with two chunks, length 300000, and chunking profile 1. The chunk IDs are 32 bytes of `11` and 32 bytes of `22`. The content hash is 32 bytes of `33`. The stored bytes (120 bytes) are:
+
+| Bytes | Meaning |
+|---|---|
+| `a3 00 02 01 01 02` | Envelope: map of 3, type 2, schema 1, key 2 (the body) |
+| `a4` | Body: map of 4 |
+| `01 82` | Key 1 (chunks): array of 2 |
+| `58 20`, 32 bytes of `11` | First chunk ID |
+| `58 20`, 32 bytes of `22` | Second chunk ID |
+| `02 1a 00 04 93 e0` | Key 2 (length): 300000 |
+| `03 58 20`, 32 bytes of `33` | Key 3 (content hash) |
+| `04 01` | Key 4 (chunking profile): 1 |
+
+A.6.2. The same bytes as one hexadecimal string:
+
+```
+a30002010102a401825820111111111111111111111111111111111111111111111111111111111111111158202222222222222222222222222222222222222222222222222222222222222222021a000493e003582033333333333333333333333333333333333333333333333333333333333333330401
+```
+
+A.6.3. The object ID of these stored bytes with type ID 2 and the dedup key of A.2.1 is `449fc1f8fb06c9aefa7fe47861cdf2f20b5af3fa1d316427cf2ddd2b504cf5e3`.
