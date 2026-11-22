@@ -1,12 +1,13 @@
 //! Opening a vault: choosing the vault config (format.md 7.2.6).
 
 use crate::layout::{CONFIG_A, CONFIG_B};
+use crate::pack::{Pack, PackOpenError};
 use crate::target::{Target, TargetError};
 use alloc::vec::Vec;
 use core::fmt;
 use nilperit_crypto::seal::KEM_NAME;
 use nilperit_crypto::{ReadKey, RootSeed, WriterKey, verify_config_mac};
-use nilperit_format::{ObjectError, VaultConfig, split_config_file};
+use nilperit_format::{ObjectError, PackName, VaultConfig, split_config_file};
 
 /// A vault could not be opened.
 #[derive(Debug)]
@@ -57,7 +58,6 @@ struct Keys {
 
 /// An open vault: a target, its vault config, and the keys to read it.
 pub struct Vault<T> {
-    #[allow(dead_code)]
     target: T,
     config: VaultConfig,
     #[allow(dead_code)]
@@ -86,6 +86,11 @@ impl<T: Target> Vault<T> {
             config,
             keys,
         })
+    }
+
+    /// Opens a pack of the vault (format.md 6.7.5, steps 1 to 4).
+    pub async fn open_pack(&self, name: PackName) -> Result<Pack, PackOpenError> {
+        Pack::open(&self.target, name, &self.keys.writer).await
     }
 
     /// The vault config that the reader uses.

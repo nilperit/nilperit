@@ -315,6 +315,7 @@ dependencies = [
 name = "nilperit-reader"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "nilperit-crypto",
  "nilperit-format",
 ]

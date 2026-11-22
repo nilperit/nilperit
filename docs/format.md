@@ -679,7 +679,7 @@ vault/
 
 9.1. A reader MUST NOT trust the file system. Some targets (for example exFAT or FAT32 media) do not rename files atomically.
 
-9.2. A reader MUST ignore a pack when the hash of the file does not agree with its name.
+9.2. A reader that reads a whole pack MUST ignore it when the hash of the file does not agree with its name. A reader that reads parts of a pack (see 6.7.5) cannot check the name. It relies on the tags, which check every part that it uses. A scrub checks the names (see 10.1).
 
 9.3. A reader MUST reject an object when its AEAD tag is not correct.
 

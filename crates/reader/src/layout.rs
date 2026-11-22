@@ -2,7 +2,7 @@
 
 use alloc::format;
 use alloc::string::String;
-use nilperit_format::SnapshotId;
+use nilperit_format::{PackName, SnapshotId};
 
 /// The first copy of the vault config.
 pub const CONFIG_A: &str = "config-a";
@@ -27,8 +27,8 @@ pub fn hex(bytes: &[u8]) -> String {
 
 /// The path of a pack: `packs/<first two characters>/<name>` (see 6.4 and 7).
 /// The name is the BLAKE3 hash of the file.
-pub fn pack_path(name: &[u8; 32]) -> String {
-    let name = hex(name);
+pub fn pack_path(name: &PackName) -> String {
+    let name = hex(name.as_bytes());
     format!("{PACKS_DIR}/{}/{name}", &name[..2])
 }
 
@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn pack_path_uses_a_two_character_directory() {
-        let path = pack_path(&[0xab; 32]);
+        let path = pack_path(&PackName::from_bytes([0xab; 32]));
         assert_eq!(path, format!("packs/ab/{}", "ab".repeat(32)));
     }
 }

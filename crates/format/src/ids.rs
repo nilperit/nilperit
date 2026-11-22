@@ -62,6 +62,12 @@ hash_type!(
 );
 
 hash_type!(
+    /// The name of a pack: the BLAKE3 hash of the whole encrypted file (format.md 6.4).
+    PackName,
+    HASH_LEN
+);
+
+hash_type!(
     /// The key of an item: a hash in the item key domain (format.md 5.6.5).
     ItemKey,
     HASH_LEN
