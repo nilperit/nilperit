@@ -30,3 +30,4 @@ ADRs are written in plain English (not STE), because rationale and trade-offs re
 | [0013](0013-integrity-and-degradation.md)     | Integrity, optional parity and graceful degradation         | Accepted |
 | [0014](0014-workspace-layout.md)              | Workspace layout and a reader-only binary                   | Accepted |
 | [0015](0015-hash-domains-and-object-ids.md)   | Hash domains and object IDs                                 | Accepted |
+| [0016](0016-compression.md)                   | Compression recorded per object                             | Accepted |

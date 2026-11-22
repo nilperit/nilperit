@@ -53,6 +53,9 @@ The step that makes new data part of the *vault*. A commit is complete when NilP
 **Compaction**
 The way NilPerit removes history. *Journal entries* and trees are immutable, so NilPerit writes a new *checkpoint* (or a combined *delta entry*) that keeps only what retention still needs, and then condemns the *journal* range that it replaces.
 
+**Compression algorithm**
+The algorithm that a writer used to compress an *object* before encryption, as a name in the *object table*. The name "none" means that the writer did not compress the object.
+
 **Condemnation record**
 A record that marks a range of *journal entries* for removal, after *compaction* has replaced it. A condemnation record does not remove data. NilPerit can revoke it until a *sweep* runs.
 
@@ -66,7 +69,7 @@ A value from an external service that marks how far a *connector* has read the c
 The bytes of one stored thing, for example one raw email message or one file.
 
 **Content object**
-An *object* that describes one *content*: the ordered list of *chunk IDs*, the total length, a keyed hash of the full content, and the *chunking profile*.
+An *object* that describes one *content*: the ordered list of *chunk IDs*, the total size, a keyed hash of the full content, and the *chunking profile*.
 
 **Context string**
 The fixed string that BLAKE3 `derive_key` uses together with its key material. Each *domain key* has its own context string.
@@ -96,7 +99,7 @@ The time that must pass after a *condemnation record* or after the creation of a
 One kind of keyed hash: *object ID*, *item key*, or content hash. Each hash domain has its own *domain key*. A hash of one hash domain never equals a hash of another.
 
 **Index**
-A *cache* that gives the location of each object: *pack*, offset, and length.
+A *cache* that gives the location of each object: *pack*, offset, and *packed size*.
 
 **Item**
 One thing from a *source*, for example one email message or one file.
@@ -147,7 +150,7 @@ One encoded unit of data in a *vault*, for example a *chunk*, a *content object*
 The hash of the *stored bytes* of an *object* in the *hash domain* for object IDs, with the object type in front of the bytes. The same object has the same object ID in all *replicas*.
 
 **Object table**
-The list in the trailer of a *pack* that gives, for each *object* in the pack, its *object ID*, object type, *key class*, offset, and length. The object table has *key class* W.
+The list in the trailer of a *pack* that gives, for each *object* in the pack, its *object ID*, object type, *key class*, offset, *packed size*, *compression algorithm*, and *unpacked size*. The object table has *key class* W.
 
 **Orphan**
 A file that is not part of a completed *commit*, for example a *pack* from an interrupted synchronization. An orphan is not an error.
@@ -157,6 +160,9 @@ An immutable file that contains many encrypted objects. The name of a pack is th
 
 **Pack key**
 A random key for the *key class* R *objects* in one *pack*. NilPerit *seals* the pack key to the *read key*.
+
+**Packed size**
+The number of bytes that an *object* uses in the body of a *pack*, after compression and encryption.
 
 **Parity data**
 Optional Reed–Solomon recovery data for a *pack*. With parity data, NilPerit can repair some damage to the pack without another copy.
@@ -217,6 +223,9 @@ A sorted, content-addressed tree of *objects* (a prolly tree). Trees share all u
 
 **Truth**
 Immutable data that NilPerit cannot make again from other data in the *vault*: *chunks*, *content objects*, *item records*, *journal entries*, *checkpoint trees*, and *archive trees*.
+
+**Unpacked size**
+The size of the *stored bytes* of an *object*: the size before compression.
 
 **Vault**
 The complete stored data of one NilPerit installation on one *target*.

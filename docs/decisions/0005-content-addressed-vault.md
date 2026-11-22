@@ -9,7 +9,7 @@ Deletions at the source must not purge the backup, but storing every edit as a f
 
 ## Decision
 
-- The vault is a **content-addressed chunk store**. Content is cut with FastCDC; each chunk is identified by a keyed BLAKE3 hash of its plaintext, then compressed (zstd, skipped for already-compressed data) and encrypted.
+- The vault is a **content-addressed chunk store**. Content is cut with FastCDC; each chunk is identified by a keyed BLAKE3 hash of its plaintext, then optionally compressed (see ADR 0016) and encrypted.
 - Chunk size is **not global**. The vault config holds an append-only table of **chunking profiles** (algorithm, min/avg/max). Each content object records its profile. The node chooses a profile from what the data *is* (size, media type, connector hint), never from which source it came from, so identical bytes from different sources still deduplicate.
 - Initial profiles: *small* (no cutting, below about 64 KiB), *default* (about 256 KiB average), *large* (about 2–4 MiB average).
 - The **chunker seed** is secret and fixed per vault, so chunk-size patterns cannot fingerprint known files.

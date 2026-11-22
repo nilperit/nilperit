@@ -10,4 +10,4 @@
 
 pub mod hash;
 
-pub use hash::{ContentHasher, DedupKey, DomainKey, DomainKeys, HASH_LEN, HashDomain, LengthError};
+pub use hash::{ContentHasher, DedupKey, DomainKey, DomainKeys, HASH_LEN, HashDomain, SizeError};

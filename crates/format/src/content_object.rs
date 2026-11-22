@@ -8,7 +8,7 @@
 //! | Key | Field | CBOR type |
 //! |---|---|---|
 //! | 1 | chunks | array of byte strings of 32 bytes |
-//! | 2 | length | unsigned integer |
+//! | 2 | size | unsigned integer |
 //! | 3 | content hash | byte string of 32 bytes |
 //! | 4 | chunking profile | unsigned integer |
 
@@ -20,7 +20,7 @@ use crate::ids::{ContentHash, HASH_LEN, ObjectId};
 use crate::object_type;
 
 const KEY_CHUNKS: u64 = 1;
-const KEY_LENGTH: u64 = 2;
+const KEY_SIZE: u64 = 2;
 const KEY_CONTENT_HASH: u64 = 3;
 const KEY_CHUNKING_PROFILE: u64 = 4;
 
@@ -64,8 +64,8 @@ impl core::error::Error for ObjectError {}
 pub struct ContentObject {
     /// The IDs of the chunks, in order. A chunk ID can appear more than once.
     pub chunks: Vec<ObjectId>,
-    /// The total length of the plaintext content, in bytes.
-    pub length: u64,
+    /// The total size of the plaintext content, in bytes.
+    pub size: u64,
     /// The keyed hash of the full plaintext.
     pub content_hash: ContentHash,
     /// The ID of the chunking profile in the vault config.
@@ -93,13 +93,13 @@ impl ContentObject {
             e.bytes(chunk.as_bytes())
                 .map_err(|_| ObjectError::BadField(KEY_CHUNKS))?;
         }
-        e.u64(KEY_LENGTH)
-            .and_then(|e| e.u64(self.length))
+        e.u64(KEY_SIZE)
+            .and_then(|e| e.u64(self.size))
             .and_then(|e| e.u64(KEY_CONTENT_HASH))
             .and_then(|e| e.bytes(self.content_hash.as_bytes()))
             .and_then(|e| e.u64(KEY_CHUNKING_PROFILE))
             .and_then(|e| e.u32(self.chunking_profile))
-            .map_err(|_| ObjectError::BadField(KEY_LENGTH))?;
+            .map_err(|_| ObjectError::BadField(KEY_SIZE))?;
         Ok(Envelope::encode(Self::TYPE_ID, Self::SCHEMA, &body)?)
     }
 
@@ -116,11 +116,11 @@ impl ContentObject {
             return Err(ObjectError::UnsupportedSchema(envelope.schema));
         }
 
-        let (mut chunks, mut length, mut content_hash, mut profile) = (None, None, None, None);
+        let (mut chunks, mut size, mut content_hash, mut profile) = (None, None, None, None);
         for (key, raw) in envelope.fields()? {
             match key {
                 KEY_CHUNKS => chunks = Some(decode_chunks(raw)?),
-                KEY_LENGTH => length = Some(decode_u64(raw, KEY_LENGTH)?),
+                KEY_SIZE => size = Some(decode_u64(raw, KEY_SIZE)?),
                 KEY_CONTENT_HASH => content_hash = Some(decode_hash(raw, KEY_CONTENT_HASH)?),
                 KEY_CHUNKING_PROFILE => {
                     let value = decode_u64(raw, KEY_CHUNKING_PROFILE)?;
@@ -135,7 +135,7 @@ impl ContentObject {
 
         Ok(Self {
             chunks: chunks.ok_or(ObjectError::MissingField(KEY_CHUNKS))?,
-            length: length.ok_or(ObjectError::MissingField(KEY_LENGTH))?,
+            size: size.ok_or(ObjectError::MissingField(KEY_SIZE))?,
             content_hash: ContentHash::from_bytes(
                 content_hash.ok_or(ObjectError::MissingField(KEY_CONTENT_HASH))?,
             ),
@@ -189,7 +189,7 @@ mod tests {
                 ObjectId::from_bytes([0x11; 32]),
                 ObjectId::from_bytes([0x22; 32]),
             ],
-            length: 300_000,
+            size: 300_000,
             content_hash: ContentHash::from_bytes([0x33; 32]),
             chunking_profile: 1,
         }
@@ -230,7 +230,7 @@ mod tests {
         // No chunks (empty content).
         let empty = ContentObject {
             chunks: Vec::new(),
-            length: 0,
+            size: 0,
             content_hash: ContentHash::from_bytes([0; 32]),
             chunking_profile: 0,
         };
@@ -242,7 +242,7 @@ mod tests {
         // Repeated chunk IDs, and values that need long CBOR heads.
         let repeated = ContentObject {
             chunks: vec![ObjectId::from_bytes([7; 32]); 300],
-            length: u64::MAX,
+            size: u64::MAX,
             content_hash: ContentHash::from_bytes([9; 32]),
             chunking_profile: u32::MAX,
         };
@@ -297,7 +297,7 @@ mod tests {
     fn rejects_missing_fields() {
         for (drop_key, expected) in [
             (1, KEY_CHUNKS),
-            (2, KEY_LENGTH),
+            (2, KEY_SIZE),
             (3, KEY_CONTENT_HASH),
             (4, KEY_CHUNKING_PROFILE),
         ] {
@@ -332,11 +332,11 @@ mod tests {
             v.extend(vec![0u8; len]);
             v
         };
-        let body = |chunks: Vec<u8>, length: Vec<u8>, hash: Vec<u8>, profile: Vec<u8>| {
+        let body = |chunks: Vec<u8>, size: Vec<u8>, hash: Vec<u8>, profile: Vec<u8>| {
             let mut b = vec![0xa4, 0x01];
             b.extend(chunks);
             b.push(0x02);
-            b.extend(length);
+            b.extend(size);
             b.push(0x03);
             b.extend(hash);
             b.push(0x04);
@@ -369,7 +369,7 @@ mod tests {
             )),
             Err(ObjectError::BadField(KEY_CHUNKS))
         );
-        // Length is a text string.
+        // Size is a text string.
         assert_eq!(
             ContentObject::decode(&body(
                 good_chunks.clone(),
@@ -377,7 +377,7 @@ mod tests {
                 hash(32),
                 good_profile.clone()
             )),
-            Err(ObjectError::BadField(KEY_LENGTH))
+            Err(ObjectError::BadField(KEY_SIZE))
         );
         // Content hash with 33 bytes.
         assert_eq!(

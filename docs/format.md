@@ -69,7 +69,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | Item key | `nilperit 2026-11-22 item-key` |
 | Content hash | `nilperit 2026-11-22 content-hash` |
 
-3.2.6. A hash in a hash domain is the keyed BLAKE3 hash with the domain key of that domain. Length: 32 bytes. Because the domain keys are different, a value of one hash domain never equals a value of another hash domain.
+3.2.6. A hash in a hash domain is the keyed BLAKE3 hash with the domain key of that domain. Size: 32 bytes. Because the domain keys are different, a value of one hash domain never equals a value of another hash domain.
 
 3.2.7. A new kind of hash MUST have its own hash domain. The context strings are fixed for a format version. In a draft version, they can change.
 
@@ -104,7 +104,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 3.3.10. The lock file is plaintext and not authenticated. It contains only a node ID and a heartbeat time. A changed lock file can stop a node, but it cannot change data.
 
-3.3.11. The format MUST record an algorithm ID for each algorithm that it uses: encryption, key encapsulation, hashing, and compression. This lets a later version change algorithms.
+3.3.11. The format MUST record an algorithm ID for each algorithm that it uses: encryption, key encapsulation, hashing, and compression. This lets a later version change algorithms. The object table records the compression algorithm of each object (see 6.3.1).
 
 ## 4. Encoding
 
@@ -145,7 +145,7 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 4.6.2. **Strict decoding.** A decoder MUST reject stored bytes that are not deterministic CBOR. This includes: an integer or length that is not in the shortest form; an indefinite-length item; a map with duplicate keys or keys that are not in the order of RFC 8949, section 4.2.1; a text string that is not valid UTF-8; and bytes after the end of the object. Two different byte strings therefore cannot give the same object. A decoder MUST limit the nesting depth. The limit of this draft is 32.
 
-4.7. **Object IDs.** The ID of each object is the hash of its stored bytes in the hash domain "object ID" (see 3.2.5). The hash input is the type ID as a 4-byte unsigned integer (little-endian), followed by the stored bytes. Length: 32 bytes.
+4.7. **Object IDs.** The ID of each object is the hash of its stored bytes in the hash domain "object ID" (see 3.2.5). The hash input is the type ID as a 4-byte unsigned integer (little-endian), followed by the stored bytes. Size: 32 bytes.
 
 4.7.1. The type ID comes from the object table (see 6.3.1). For an enveloped object, the type ID in the object table MUST be equal to the type in the envelope. A reader MUST reject the object when they are different.
 
@@ -161,9 +161,9 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 
 5.1.1. NilPerit cuts content into chunks with FastCDC. The chunker seed sets the gear table.
 
-5.1.2. The chunk ID is the object ID of the chunk (see 4.7): the keyed BLAKE3 hash of the plaintext chunk. Length: 32 bytes.
+5.1.2. The chunk ID is the object ID of the chunk (see 4.7): the keyed BLAKE3 hash of the plaintext chunk. Size: 32 bytes.
 
-5.1.3. NilPerit compresses a chunk with zstd before encryption. It MUST NOT compress data that is already compressed (for example JPEG, MP4, ZIP).
+5.1.3. NilPerit MAY compress a chunk before encryption (see 6.6). The chunk ID does not depend on compression (see 4.7.2).
 
 5.1.4. A chunk has key class R.
 
@@ -190,11 +190,11 @@ Each vault contains a copy of this file with the name `FORMAT.md`. With this fil
 | Key | Field | CBOR type | Meaning |
 |---|---|---|---|
 | 1 | chunks | Array of byte strings | The chunk IDs, in order. Each is 32 bytes. |
-| 2 | length | Unsigned integer | The total length of the plaintext content, in bytes |
+| 2 | size | Unsigned integer | The total size of the plaintext content, in bytes |
 | 3 | content hash | Byte string, 32 bytes | The keyed BLAKE3 hash of the full plaintext (hash domain: content hash, see 3.2.5) |
 | 4 | chunking profile | Unsigned integer | The ID of the chunking profile (see 5.2.1). It fits in 32 bits. |
 
-5.3.1.1. The same chunk ID can appear more than once in the chunk list. A content without data has an empty chunk list and length 0.
+5.3.1.1. The same chunk ID can appear more than once in the chunk list. A content without data has an empty chunk list and size 0.
 
 5.3.1.2. A decoder MUST reject a content object when a field is missing, or when a field has another CBOR type or size than the table gives.
 
@@ -273,7 +273,7 @@ This procedure can select an entry that was complete but not committed. That is 
 
 5.6.4. Leaf entries of an archive tree and of an archive map: item key and item record ID → content object IDs, time first seen, time last seen.
 
-5.6.5. The item key is the hash of the source ID and the native ID in the hash domain "item key" (see 3.2.5). The hash input is: the length of the source ID as a 4-byte unsigned integer (little-endian), the source ID, the length of the native ID as a 4-byte unsigned integer (little-endian), and the native ID. The lengths make the input unambiguous.
+5.6.5. The item key is the hash of the source ID and the native ID in the hash domain "item key" (see 3.2.5). The hash input is: the size of the source ID as a 4-byte unsigned integer (little-endian), the source ID, the size of the native ID as a 4-byte unsigned integer (little-endian), and the native ID. The sizes make the input unambiguous.
 
 5.6.6. Object IDs, item keys, and content hashes use different hash domains (see 3.2.5).
 
@@ -317,9 +317,19 @@ This procedure can select an entry that was complete but not committed. That is 
 | Header | Magic bytes, format version, algorithm IDs (TBD: exact layout) |
 | Body | Encrypted objects, one after the other |
 | Trailer | Sealed pack key (only when the pack contains R objects); object table |
-| Footer | Trailer offset and length |
+| Footer | Trailer offset and size |
 
-6.3.1. The object table lists each object in the pack: object ID, object type, key class, offset, and length.
+6.3.1. The object table lists each object in the pack. For each object, it gives:
+
+| Field | Meaning |
+|---|---|
+| object ID | The object ID (see 4.7) |
+| object type | The type ID (see 4.4.3) |
+| key class | R or W (see 3.3.1) |
+| offset | The position of the object in the body of the pack |
+| packed size | The number of bytes that the object uses in the body of the pack, after compression and encryption |
+| compression | The name of the compression algorithm, as a text string (see 6.6) |
+| unpacked size | The size of the stored bytes of the object (see 4.7.2), in bytes. This is the size before compression. |
 
 6.3.2. The object table has key class W. The node can read it without the read key. This lets the node rebuild the index and run a sweep.
 
@@ -328,6 +338,31 @@ This procedure can select an entry that was complete but not committed. That is 
 6.4. The name of a pack is the BLAKE3 hash of the complete encrypted file, in lowercase hexadecimal. Anyone can verify a pack without keys.
 
 6.5. NilPerit SHOULD NOT put objects of sources with different priorities in the same pack.
+
+### 6.6. Compression
+
+6.6.1. NilPerit compresses the stored bytes of an object before it encrypts them. After it decrypts an object, it decompresses the bytes. The object ID does not depend on compression (see 4.7.2).
+
+6.6.2. The compression field of the object table (see 6.3.1) names the algorithm. A name is a text string of lowercase ASCII characters. This draft defines these names:
+
+| Name | Meaning |
+|---|---|
+| none | The bytes are not changed. |
+| deflate | One DEFLATE stream (RFC 1951). It has no zlib header and no gzip header. |
+
+6.6.3. A reader MUST reject an object with a compression name that it does not know. It MUST NOT guess. This is the same rule as 4.5.1 for schema versions: an older reader stops at a newer format version (see 12.3), so an unknown name can only come from a bug or from damage.
+
+6.6.4. **Reading.** A reader MUST check the AEAD tag of an object before it decompresses the object (see 9.3). The tag covers the compressed bytes. A reader MUST decompress an object to exactly the unpacked size of the object table. It MUST stop and reject the object when the output is longer than the unpacked size, and when the output is shorter. For the name "none", the decrypted bytes MUST have the unpacked size. When the reader has the dedup key, it MUST then check the object ID (see 4.7).
+
+6.6.5. The writer chooses the algorithm of each object. The format does not say how. A writer MAY keep an object uncompressed when compression does not make it smaller.
+
+6.6.6. Two replicas can store the same object with different algorithms (see 10.3).
+
+6.6.7. NilPerit MUST NOT compress files outside packs (see 3.3.7).
+
+6.6.8. A node can write objects that have a correct AEAD tag, because it has the writer key and the public part of the read key. A compromised node can therefore write compressed bytes that an attacker made. A decompressor MUST be safe against such input: it MUST NOT use unsafe code that depends on the input, and it MUST limit its output to the unpacked size (see 6.6.4).
+
+6.6.9. The unpacked size and the packed size allow a reader to report the effect of compression without a read key.
 
 ## 7. Vault layout
 
@@ -457,7 +492,7 @@ The items below are not fixed in this draft:
 - Hybrid KEM combiner construction (3.3.2); candidate: X-Wing (X25519 + ML-KEM-768).
 - ML-KEM implementation (3.3.2): RustCrypto `ml-kem` has never had an independent audit; `libcrux-ml-kem` (formally verified) is the main alternative.
 - Per-pack derivation of the W key (3.3.3).
-- Compression of objects (5.1.3, 6.3.1): the hash uses the bytes before compression, and the object table has no field for the compression algorithm. Where a reader finds it is not decided.
+- Exact encoding of the object table (6.3.1). The compression field is a text string, so the object table is CBOR.
 - Exact values of the chunking profiles (5.2.4).
 - Pack header layout and magic bytes (6.3).
 - Number and names of vault config copies (7.2).
@@ -506,7 +541,7 @@ A.3.2. The second row shows that the type ID changes the object ID for the same 
 
 ### A.4. Item keys
 
-A.4.1. The hash input is the length of the source ID, the source ID, the length of the native ID, and the native ID. Each length is 4 bytes (little-endian) (see 5.6.5). The IDs in the table are ASCII text.
+A.4.1. The hash input is the size of the source ID, the source ID, the size of the native ID, and the native ID. Each size is 4 bytes (little-endian) (see 5.6.5). The IDs in the table are ASCII text.
 
 | Source ID | Native ID | Item key |
 |---|---|---|
@@ -522,7 +557,7 @@ A.5.1. The content hash of the 5 bytes `hello` (ASCII) is `ba57c82d8e9d4648188e4
 
 ### A.6. Content object
 
-A.6.1. A content object with two chunks, length 300000, and chunking profile 1. The chunk IDs are 32 bytes of `11` and 32 bytes of `22`. The content hash is 32 bytes of `33`. The stored bytes (120 bytes) are:
+A.6.1. A content object with two chunks, size 300000, and chunking profile 1. The chunk IDs are 32 bytes of `11` and 32 bytes of `22`. The content hash is 32 bytes of `33`. The stored bytes (120 bytes) are:
 
 | Bytes | Meaning |
 |---|---|
@@ -531,7 +566,7 @@ A.6.1. A content object with two chunks, length 300000, and chunking profile 1. 
 | `01 82` | Key 1 (chunks): array of 2 |
 | `58 20`, 32 bytes of `11` | First chunk ID |
 | `58 20`, 32 bytes of `22` | Second chunk ID |
-| `02 1a 00 04 93 e0` | Key 2 (length): 300000 |
+| `02 1a 00 04 93 e0` | Key 2 (size): 300000 |
 | `03 58 20`, 32 bytes of `33` | Key 3 (content hash) |
 | `04 01` | Key 4 (chunking profile): 1 |
 
@@ -542,3 +577,13 @@ a30002010102a4018258201111111111111111111111111111111111111111111111111111111111
 ```
 
 A.6.3. The object ID of these stored bytes with type ID 2 and the dedup key of A.2.1 is `449fc1f8fb06c9aefa7fe47861cdf2f20b5af3fa1d316427cf2ddd2b504cf5e3`.
+
+### A.7. Compression
+
+A.7.1. The five bytes `hello` (ASCII) as one DEFLATE stream (name "deflate"):
+
+```
+cb 48 cd c9 c9 07 00
+```
+
+A.7.2. A reader MUST decode these seven bytes to the five bytes `68 65 6c 6c 6f`. Different encoders make different streams for the same input. A reader MUST accept every valid DEFLATE stream.
