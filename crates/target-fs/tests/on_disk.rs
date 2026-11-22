@@ -97,6 +97,7 @@ impl Connector for Files {
                     modified: Some(NOW),
                     created: None,
                     media_type: None,
+                    size: None,
                     metadata: None,
                     contents: vec![Box::new(move || {
                         Ok(Box::new(Cursor::new(data)) as Box<dyn std::io::Read>)

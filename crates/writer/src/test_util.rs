@@ -187,6 +187,8 @@ impl Connector for ListConnector {
                     modified: Some(1_700_000_000_000),
                     created: None,
                     media_type: Some("application/octet-stream".into()),
+                    // An item that cannot be read has nothing to read.
+                    size: Some(data.as_ref().map_or(0, |bytes| bytes.len() as u64)),
                     metadata: None,
                     contents: vec![Box::new(move || match data {
                         Ok(bytes) => Ok(Box::new(Cursor::new(bytes)) as Box<dyn io::Read>),

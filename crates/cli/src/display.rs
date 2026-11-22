@@ -15,6 +15,23 @@ pub fn size(bytes: u64) -> String {
     format!("{value:.1} {}", UNITS[unit])
 }
 
+/// A time span for a person: `45 s`, `12 min`, `1 min 15 s`, `2 h 5 min`. It is rounded to
+/// whole seconds. Hours have no seconds.
+pub fn span(duration: std::time::Duration) -> String {
+    let seconds = duration.as_secs_f64().round() as u64;
+    match seconds {
+        0..60 => format!("{seconds} s"),
+        60..3600 => match seconds % 60 {
+            0 => format!("{} min", seconds / 60),
+            rest => format!("{} min {rest} s", seconds / 60),
+        },
+        _ => match seconds % 3600 / 60 {
+            0 => format!("{} h", seconds / 3600),
+            rest => format!("{} h {rest} min", seconds / 3600),
+        },
+    }
+}
+
 /// A time in milliseconds since 1970 as `2023-11-14 22:13`, in UTC.
 ///
 /// The conversion from days to a date is the algorithm of Howard Hinnant for the
@@ -64,6 +81,23 @@ mod tests {
         assert_eq!(size(3 * 1024 * 1024 * 1024), "3.0 GiB");
         // 2^64 bytes are 2^24 TiB.
         assert_eq!(size(u64::MAX), "16777216.0 TiB");
+    }
+
+    #[test]
+    fn spans_are_short_for_a_person() {
+        use std::time::Duration;
+        let span = |ms| super::span(Duration::from_millis(ms));
+        assert_eq!(span(0), "0 s");
+        assert_eq!(span(499), "0 s");
+        assert_eq!(span(500), "1 s");
+        assert_eq!(span(59_400), "59 s");
+        assert_eq!(span(60_000), "1 min");
+        assert_eq!(span(75_000), "1 min 15 s");
+        assert_eq!(span(3_599_000), "59 min 59 s");
+        assert_eq!(span(3_600_000), "1 h");
+        assert_eq!(span(7_500_000), "2 h 5 min");
+        // The seconds of a span of hours are left out.
+        assert_eq!(span(3_661_000), "1 h 1 min");
     }
 
     #[test]

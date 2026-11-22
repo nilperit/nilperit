@@ -6,11 +6,13 @@ use crate::display::size;
 use crate::environment::Environment;
 use crate::error::CliError;
 use crate::exec::block_on;
+use crate::progress::{Status, with_reporter};
 use nilperit_connector_fs::{FolderConnector, Symlinks};
 use nilperit_crypto::CryptoRng;
 use nilperit_target_fs::FsTarget;
 use nilperit_writer::{
-    FailedItem, LockError, SyncOptions, SyncReport, WriterLock, source_id, sync,
+    Counts, FailedItem, LockError, Progress, SyncOptions, SyncReport, WriterLock, source_id,
+    sync_with_progress,
 };
 use std::fs;
 use std::io::{self, Write};
@@ -29,6 +31,7 @@ pub fn run<R: CryptoRng>(
     args: &SyncArgs,
     env: &Environment,
     out: &mut dyn Write,
+    err: &mut (dyn Write + Send),
     rng: &mut R,
 ) -> Result<ExitCode, CliError> {
     let target = FsTarget::new(&args.vault);
@@ -76,15 +79,18 @@ pub fn run<R: CryptoRng>(
         }
         Err(e) => return Err(CliError::Lock(e)),
     };
-    let result = block_on(sync(
-        &lock,
-        &credential,
-        source,
-        &mut connector,
-        &SyncOptions::default(),
-        now_ms,
-        rng,
-    ));
+    let result = with_reporter(err, env.progress, |reporter| {
+        block_on(sync_with_progress(
+            &lock,
+            &credential,
+            source,
+            &mut connector,
+            &SyncOptions::default(),
+            now_ms,
+            rng,
+            &mut |progress| reporter.report(status(progress)),
+        ))
+    });
     // Free the lock whatever the result was. When this fails, the lock goes stale.
     let _ = block_on(lock.release());
     let report = result?;
@@ -95,6 +101,26 @@ pub fn run<R: CryptoRng>(
     } else {
         ExitCode::from(EXIT_WITH_WARNINGS)
     })
+}
+
+/// What the person reads of a step of the run. It has numbers only: a name never goes on
+/// the line of progress (AGENTS.md).
+fn status(progress: Progress) -> Status {
+    let transfer = |label, counts: Counts| {
+        Status::transfer(
+            label,
+            (counts.items_done, counts.items_total),
+            counts.bytes_done,
+            counts.bytes_total,
+        )
+    };
+    match progress {
+        Progress::OpeningVault => Status::step("Opening the vault"),
+        Progress::ReplayingJournal => Status::step("Reading the journal"),
+        Progress::ReadingSource => Status::step("Listing the folder"),
+        Progress::Reading(counts) => transfer("Backing up", counts),
+        Progress::Committing(counts) => transfer("Writing to the vault", counts),
+    }
 }
 
 /// Shows what the run did. File names are shown only for `-v`, and only for the items that
