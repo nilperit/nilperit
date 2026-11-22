@@ -6,7 +6,7 @@
 
 Pre-alpha. The format is specified far enough to build a first working system. The format crate and the crypto crate are done: the strict CBOR check, the envelope, all object types that the first system needs (content object, item record, delta entry, snapshot header, object table), the pack structure, the vault config, key derivation from the recovery phrase, authenticated encryption, and the seal. Every part has test vectors in [format.md](format.md) appendix A.
 
-Nothing yet reads or writes a vault on disk. The reader crate and the writer crate are empty.
+The reader crate is done: it opens a vault and its packs, replays the journal and reads the content of an item, behind a storage trait. It is tested against a vault in memory. Nothing writes a vault yet, so the writer crate is empty.
 
 ## The first working system
 

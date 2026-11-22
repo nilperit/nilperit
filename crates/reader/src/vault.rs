@@ -83,13 +83,15 @@ impl<T: Target> Vault<T> {
     }
 
     /// Reads an object of a pack and returns its stored bytes (format.md 6.7.5,
-    /// step 5).
+    /// step 5). `object_type` is the type that the caller expects.
     pub async fn read_object(
         &self,
         pack: &Pack,
         id: &ObjectId,
+        object_type: u32,
     ) -> Result<Vec<u8>, ObjectReadError> {
-        pack.read_object(&self.target, id, &self.keys).await
+        pack.read_object(&self.target, id, object_type, &self.keys)
+            .await
     }
 
     pub(crate) fn keys(&self) -> &Keys {
