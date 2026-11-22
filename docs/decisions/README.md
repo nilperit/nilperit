@@ -32,3 +32,4 @@ ADRs are written in plain English (not STE), because rationale and trade-offs re
 | [0015](0015-hash-domains-and-object-ids.md)   | Hash domains and object IDs                                 | Accepted |
 | [0016](0016-compression.md)                   | Compression recorded per object                             | Accepted |
 | [0017](0017-pack-layout.md)                   | Pack layout                                                 | Accepted |
+| [0018](0018-keys-seal-and-vault-config.md)    | Keys, the seal and the vault config                         | Accepted |

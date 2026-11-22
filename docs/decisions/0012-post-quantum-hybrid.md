@@ -17,7 +17,7 @@ An archive is meant to last decades. Someone who copies an encrypted vault today
 
 - Protection against future quantum attacks on data written from now on.
 - Copies taken before a future algorithm change cannot be protected afterwards; crypto agility only protects what comes next. We accept this.
-- The exact combiner construction is still open (see format.md, open items). X-Wing, a hybrid KEM that combines X25519 and ML-KEM-768 in one defined construction, is the main candidate.
+- The combiner is X-Wing (draft 06), a hybrid KEM that combines X25519 and ML-KEM-768 in one defined construction (ADR 0018). It is an Internet-Draft, so the algorithm name in a vault names the draft.
 - The implementation is still open. As of November 2026, RustCrypto `ml-kem` states that it has never been independently audited. `libcrux-ml-kem` (Cryspen, formally verified) is the main alternative. For comparison: RustCrypto `chacha20poly1305` was audited by NCC Group (2020), and `curve25519-dalek` by Quarkslab (2019).
 
 ## Alternatives considered
