@@ -1,0 +1,23 @@
+[package]
+name = "nilperit-connector-fs"
+description = "The NilPerit connector for a folder on a local file system"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+nilperit-writer.workspace = true
+
+[dev-dependencies]
+nilperit-format.workspace = true
+nilperit-crypto.workspace = true
+nilperit-reader.workspace = true
+nilperit-target-fs = { path = "../target-fs" }
+# Only for the random number generator of the tests.
+x-wing = { version = "0.1.1", default-features = false, features = ["zeroize"] }
+
+[lints]
+workspace = true
