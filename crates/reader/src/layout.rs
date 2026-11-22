@@ -10,6 +10,8 @@ pub const CONFIG_A: &str = "config-a";
 pub const CONFIG_B: &str = "config-b";
 /// The directory of the packs.
 pub const PACKS_DIR: &str = "packs";
+/// The writer lock (format.md 8.6.1). Only a writer uses it.
+pub const LOCK_PATH: &str = "locks/writer";
 /// The directory of the snapshot headers.
 pub const SNAPSHOTS_DIR: &str = "snapshots";
 

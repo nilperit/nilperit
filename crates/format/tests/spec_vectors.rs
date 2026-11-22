@@ -1,11 +1,11 @@
-//! Tests against the test vectors of format.md A.9 (the vault config) and A.10
-//! (item record, delta entry and snapshot header). The vectors were made with
+//! Tests against the test vectors of format.md A.9 (the vault config), A.10
+//! (item record, delta entry and snapshot header) and A.11 (the writer lock). The vectors were made with
 //! other implementations, not with this crate: each type reads its vector and
 //! writes it back to exactly the same bytes.
 
 use nilperit_format::{
-    ChunkingProfile, DeltaEntry, ItemKey, ItemRecord, ObjectId, SnapshotHeader, SnapshotId,
-    SourceId, Statistics, VaultConfig, VaultId, join_config_file, split_config_file,
+    ChunkingProfile, DeltaEntry, ItemKey, ItemRecord, LockFile, NodeId, ObjectId, SnapshotHeader,
+    SnapshotId, SourceId, Statistics, VaultConfig, VaultId, join_config_file, split_config_file,
 };
 
 fn hex(s: &str) -> Vec<u8> {
@@ -128,4 +128,13 @@ fn a10_snapshot_header() {
     let config = VaultConfig::decode(&hex(A9_MAP)).unwrap();
     assert_eq!(header.vault, config.essentials);
     assert_eq!(header.encode().unwrap(), stored);
+}
+
+#[test]
+fn a11_writer_lock() {
+    let bytes = hex("a2015055555555555555555555555555555555021b0000018bcfe56fd0");
+    let lock = LockFile::decode(&bytes).unwrap();
+    assert_eq!(lock.node_id, NodeId::from_bytes([0x55; 16]));
+    assert_eq!(lock.heartbeat, 1_700_000_002_000);
+    assert_eq!(lock.encode(), bytes);
 }

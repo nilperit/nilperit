@@ -6,6 +6,7 @@
 pub mod chunking;
 pub mod commit;
 pub mod credential;
+pub mod lock;
 pub mod pack_builder;
 pub mod target;
 #[cfg(test)]
@@ -14,6 +15,7 @@ pub mod vault_init;
 
 pub use commit::{CommitError, commit};
 pub use credential::Credential;
+pub use lock::{LockError, WriterLock};
 pub use pack_builder::{BuildError, BuiltPack, PackBuilder};
 pub use target::WriteTarget;
 pub use vault_init::{InitError, create_vault};

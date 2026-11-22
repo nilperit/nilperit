@@ -86,6 +86,12 @@ hash_type!(
 );
 
 hash_type!(
+    /// The ID of a node: 16 random bytes that the node makes once (format.md 8.6.1).
+    NodeId,
+    SHORT_ID_LEN
+);
+
+hash_type!(
     /// The ID of a vault: 16 random bytes in the vault config (format.md 7.2.2).
     VaultId,
     SHORT_ID_LEN

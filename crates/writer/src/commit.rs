@@ -4,6 +4,7 @@
 //! before that file exists, a reader does not see the new data (format.md 8.3).
 
 use crate::credential::Credential;
+use crate::lock::{LockError, WriterLock};
 use crate::pack_builder::BuiltPack;
 use crate::target::WriteTarget;
 use nilperit_crypto::{CryptoRng, encrypt};
@@ -17,6 +18,8 @@ use std::fmt;
 /// reader does not see the new data.
 #[derive(Debug)]
 pub enum CommitError {
+    /// The writer lock is lost: a commit needs it (format.md 8.6.3).
+    Lock(LockError),
     /// The target failed.
     Target(TargetError),
     /// The snapshot header is not valid.
@@ -28,6 +31,7 @@ pub enum CommitError {
 impl fmt::Display for CommitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Lock(e) => e.fmt(f),
             Self::Target(e) => e.fmt(f),
             Self::Header(e) => write!(f, "the snapshot header is not valid: {e}"),
             Self::Encryption => f.write_str("the encryption failed"),
@@ -36,6 +40,12 @@ impl fmt::Display for CommitError {
 }
 
 impl std::error::Error for CommitError {}
+
+impl From<LockError> for CommitError {
+    fn from(e: LockError) -> Self {
+        Self::Lock(e)
+    }
+}
 
 impl From<TargetError> for CommitError {
     fn from(e: TargetError) -> Self {
@@ -49,13 +59,21 @@ impl From<TargetError> for CommitError {
 /// Each file is written with [`WriteTarget::put`], so a file is either complete or
 /// not there. The first failure stops the commit. The snapshot header is the last
 /// file, so a commit that stops earlier changes nothing that a reader can see.
+///
+/// The commit needs the writer lock. It writes a new heartbeat first, and again
+/// just before the snapshot header, because writing packs can take a long time
+/// (format.md 8.6.3). When the lock is lost, it stops and writes no header.
+/// `clock` gives the time of this node in milliseconds.
 pub async fn commit<T: WriteTarget, R: CryptoRng>(
-    target: &T,
+    lock: &WriterLock<'_, T>,
     credential: &Credential,
     packs: &[BuiltPack],
     header: &SnapshotHeader,
+    clock: impl Fn() -> i64,
     rng: &mut R,
 ) -> Result<(), CommitError> {
+    let target = lock.target();
+    lock.refresh(clock()).await?;
     // Encode and encrypt the header first: a header that is not valid must not
     // leave packs behind.
     let stored = header.encode().map_err(CommitError::Header)?;
@@ -72,6 +90,7 @@ pub async fn commit<T: WriteTarget, R: CryptoRng>(
             target.put(&pack_path(&pack.name), &pack.bytes).await?;
         }
     }
+    lock.refresh(clock()).await?;
     target
         .put(&snapshot_path(&header.snapshot_id), &file)
         .await?;
@@ -82,22 +101,30 @@ pub async fn commit<T: WriteTarget, R: CryptoRng>(
 mod tests {
     use super::*;
     use crate::chunking::{ChunkReader, Fixed};
+    use crate::lock::WriterLock;
     use crate::pack_builder::PackBuilder;
     use crate::test_util::{Flaky, TestRng, block_on};
     use crate::vault_init::create_vault;
     use nilperit_crypto::RootSeed;
     use nilperit_format::object_type::{CHUNK, CONTENT_OBJECT, DELTA_ENTRY, ITEM_RECORD};
     use nilperit_format::{
-        Change, ContentHash, ContentObject, DeltaEntry, ItemKey, ItemRecord, ObjectId, SnapshotId,
-        SourceId, VaultEssentials,
+        Change, ContentHash, ContentObject, DeltaEntry, ItemKey, ItemRecord, NodeId, ObjectId,
+        SnapshotId, SourceId, VaultEssentials,
     };
-    use nilperit_reader::{MemoryTarget, Vault};
+    use nilperit_reader::{MemoryTarget, Target, Vault};
 
     fn seed() -> RootSeed {
         RootSeed::from_bytes([7; 32])
     }
 
     const SOURCE: SourceId = SourceId::from_bytes([1; 16]);
+    const NODE: NodeId = NodeId::from_bytes([0x41; 16]);
+    const NOW: i64 = 1_700_000_000_000;
+    const STALE: i64 = 600_000;
+
+    fn lock<T: WriteTarget>(target: &T) -> WriterLock<'_, T> {
+        block_on(WriterLock::acquire(target, NODE, NOW, STALE)).unwrap()
+    }
 
     /// One commit of a tiny sync: writes the files as items and commits.
     ///
@@ -192,7 +219,9 @@ mod tests {
             statistics: None,
             vault: essentials.clone(),
         };
-        block_on(commit(target, &credential, &[pack], &header, rng)).unwrap();
+        let lock = lock(target);
+        block_on(commit(&lock, &credential, &[pack], &header, || NOW, rng)).unwrap();
+        block_on(lock.release()).unwrap();
         entry_id
     }
 
@@ -319,8 +348,16 @@ mod tests {
         let (packs, header) = some_packs(&credential, &essentials, &mut rng);
 
         let flaky = Flaky::new(&target, 100);
-        flaky.log.borrow_mut().clear();
-        block_on(commit(&flaky, &credential, &packs, &header, &mut rng)).unwrap();
+        let held = lock(&flaky);
+        block_on(commit(
+            &held,
+            &credential,
+            &packs,
+            &header,
+            || NOW,
+            &mut rng,
+        ))
+        .unwrap();
         let log = flaky.log.borrow();
         assert_eq!(log.len(), 4);
         assert_eq!(log[0], pack_path(&packs[1].name));
@@ -341,7 +378,15 @@ mod tests {
             let (packs, header) = some_packs(&credential, &essentials, &mut rng);
 
             let flaky = Flaky::new(&target, working_writes);
-            let result = block_on(commit(&flaky, &credential, &packs, &header, &mut rng));
+            let held = lock(&flaky);
+            let result = block_on(commit(
+                &held,
+                &credential,
+                &packs,
+                &header,
+                || NOW,
+                &mut rng,
+            ));
             assert!(
                 matches!(result, Err(CommitError::Target(_))),
                 "{working_writes}"
@@ -368,13 +413,93 @@ mod tests {
         let essentials = new_vault(&target, &mut rng);
         let (packs, header) = some_packs(&credential, &essentials, &mut rng);
         let flaky = Flaky::new(&target, 2);
-        assert!(block_on(commit(&flaky, &credential, &packs, &header, &mut rng)).is_err());
-        block_on(commit(&target, &credential, &packs, &header, &mut rng)).unwrap();
+        let held = lock(&flaky);
+        assert!(
+            block_on(commit(
+                &held,
+                &credential,
+                &packs,
+                &header,
+                || NOW,
+                &mut rng
+            ))
+            .is_err()
+        );
+        // The failed run did not release the lock. The next run starts after the
+        // staleness limit and takes it over.
+        let later = NOW + STALE + 1;
+        let held = block_on(WriterLock::acquire(&target, NODE, later, STALE)).unwrap();
+        block_on(commit(
+            &held,
+            &credential,
+            &packs,
+            &header,
+            || later,
+            &mut rng,
+        ))
+        .unwrap();
         let vault = block_on(Vault::open(&target, &seed())).unwrap();
         assert_eq!(
             block_on(vault.read_snapshots()).unwrap().headers(),
             [header]
         );
         assert_eq!(block_on(vault.scan_packs()).unwrap().packs().count(), 3);
+    }
+
+    #[test]
+    fn a_commit_without_the_lock_writes_nothing() {
+        let credential = Credential::from_seed(&seed());
+        let target = MemoryTarget::new();
+        let mut rng = TestRng::new(5);
+        let essentials = new_vault(&target, &mut rng);
+        let (packs, header) = some_packs(&credential, &essentials, &mut rng);
+
+        // This node pauses. Another node takes over the stale lock.
+        let held = lock(&target);
+        let other = NodeId::from_bytes([0x42; 16]);
+        let later = NOW + STALE + 1;
+        let _taken = block_on(WriterLock::acquire(&target, other, later, STALE)).unwrap();
+
+        let result = block_on(commit(
+            &held,
+            &credential,
+            &packs,
+            &header,
+            || later,
+            &mut rng,
+        ));
+        assert!(matches!(result, Err(CommitError::Lock(LockError::Lost))));
+        let vault = block_on(Vault::open(&target, &seed())).unwrap();
+        assert_eq!(block_on(vault.scan_packs()).unwrap().packs().count(), 0);
+        assert!(
+            block_on(vault.read_snapshots())
+                .unwrap()
+                .headers()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_commit_writes_new_heartbeats() {
+        use nilperit_format::LockFile;
+        use nilperit_reader::layout::LOCK_PATH;
+        let credential = Credential::from_seed(&seed());
+        let target = MemoryTarget::new();
+        let mut rng = TestRng::new(6);
+        let essentials = new_vault(&target, &mut rng);
+        let (packs, header) = some_packs(&credential, &essentials, &mut rng);
+        let held = lock(&target);
+        block_on(commit(
+            &held,
+            &credential,
+            &packs,
+            &header,
+            || NOW + 5_000,
+            &mut rng,
+        ))
+        .unwrap();
+        let file = LockFile::decode(&block_on(target.read(LOCK_PATH)).unwrap()).unwrap();
+        assert_eq!(file.node_id, NODE);
+        assert_eq!(file.heartbeat, NOW + 5_000);
     }
 }
