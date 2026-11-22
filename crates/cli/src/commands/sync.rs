@@ -195,10 +195,27 @@ fn why(failed: &FailedItem) -> String {
             "not a regular file (a link, a socket, a pipe or a device)".into()
         }
         io::ErrorKind::PermissionDenied => "permission denied".into(),
+        io::ErrorKind::FileTooLarge => {
+            "too large for the vault (above about 7.5 TiB with the default chunk size)".into()
+        }
         io::ErrorKind::InvalidInput => "the same name occurs twice".into(),
         io::ErrorKind::Other => {
             "a link that cannot be followed, or a folder that cannot be listed".into()
         }
         kind => format!("{kind:?}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_that_is_too_large_has_its_own_text() {
+        let failed = FailedItem {
+            native_id: b"x".to_vec(),
+            kind: io::ErrorKind::FileTooLarge,
+        };
+        assert!(why(&failed).starts_with("too large for the vault"));
     }
 }

@@ -671,6 +671,8 @@ vault/
 
 8.4. During a long synchronization, NilPerit SHOULD commit at intervals (for example every N MiB or every N minutes). A failure then loses only the work since the last commit.
 
+8.4.1. A delta entry is an object, and an object is at most 2^30 bytes (see 6.7.6). A delta entry grows with the items that changed since the last commit. A writer MUST commit before a delta entry reaches this limit. It MUST write the keys of a long list of deleted items in several commits, each with the cursor of the commit before it, and the last one with the new cursor.
+
 8.5. A file that is not part of a commit is an orphan. An orphan is not an error. A later run can use it, or a sweep removes it.
 
 8.6. Only one node can write to a vault at a time. The writer MUST hold the writer lock.
