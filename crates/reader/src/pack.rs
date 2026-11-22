@@ -313,7 +313,7 @@ mod tests {
     }
 
     fn target_with(bytes: Vec<u8>) -> MemoryTarget {
-        let mut target = MemoryTarget::new();
+        let target = MemoryTarget::new();
         target.insert(&pack_path(&name()), bytes);
         target
     }
@@ -524,7 +524,7 @@ mod tests {
         let keys = TestKeys::new(0x50);
         let (bytes, ids) = build_pack(&keys, objects);
         let name = PackName::from_bytes(*blake3::hash(&bytes).as_bytes());
-        let mut target = MemoryTarget::new();
+        let target = MemoryTarget::new();
         target.insert(&pack_path(&name), bytes);
         let pack = block_on(Pack::open(&target, name, &keys.writer)).unwrap();
         (pack, target, keys, ids)
@@ -635,7 +635,7 @@ mod tests {
         )];
         let (mut bytes, ids) = build_pack(&keys, &objects);
         let name = PackName::from_bytes(*blake3::hash(&bytes).as_bytes());
-        let mut target = MemoryTarget::new();
+        let target = MemoryTarget::new();
         target.insert(&pack_path(&name), bytes.clone());
         let offset = block_on(Pack::open(&target, name, &keys.writer))
             .unwrap()
