@@ -167,7 +167,8 @@ fn widen<E>(e: ContentError) -> ContentError<E> {
 mod tests {
     use super::*;
     use crate::test_util::{
-        TestKeys, TestObject, block_on, build_pack, test_seed, typed_object, vault_with,
+        TestKeys, TestObject, block_on, build_pack, node_vault_with, test_seed, typed_object,
+        vault_with,
     };
     use alloc::string::ToString;
     use alloc::vec;
@@ -466,5 +467,19 @@ mod tests {
             }
             assert_eq!(bytes, b"hello world");
         }
+    }
+
+    #[test]
+    fn a_node_cannot_read_items_or_content() {
+        // Chunks and item records are R objects. A node has no read key.
+        let (objects, id, _) = three_chunks();
+        let (bytes, _) = build_pack(&TestKeys::from_seed(&test_seed()), &objects);
+        let vault = node_vault_with(&[&bytes], &[]);
+        let index = block_on(vault.scan_packs()).unwrap();
+        // The content object is W: the node reads it. The first chunk is R.
+        assert!(matches!(
+            block_on(vault.read_content_to_vec(&index, &id)),
+            Err(ContentError::Unreadable(_, ObjectReadError::NoReadKey))
+        ));
     }
 }

@@ -257,6 +257,24 @@ pub fn vault_with(
     packs: &[&[u8]],
     files: &[(alloc::string::String, Vec<u8>)],
 ) -> crate::Vault<crate::MemoryTarget> {
+    block_on(crate::Vault::open(target_with(packs, files), &test_seed())).unwrap()
+}
+
+/// The same vault as `vault_with`, opened as a node opens it: without the read key.
+pub fn node_vault_with(
+    packs: &[&[u8]],
+    files: &[(alloc::string::String, Vec<u8>)],
+) -> crate::Vault<crate::MemoryTarget> {
+    let seed = test_seed();
+    let keys = crate::Keys::for_node(
+        seed.writer_key(),
+        seed.read_key().public_key(),
+        &seed.dedup_key(),
+    );
+    block_on(crate::Vault::open_with(target_with(packs, files), keys)).unwrap()
+}
+
+fn target_with(packs: &[&[u8]], files: &[(alloc::string::String, Vec<u8>)]) -> crate::MemoryTarget {
     let seed = test_seed();
     let target = crate::MemoryTarget::new();
     target.insert(
@@ -269,7 +287,7 @@ pub fn vault_with(
     for (path, bytes) in files {
         target.insert(path, bytes.clone());
     }
-    block_on(crate::Vault::open(target, &seed)).unwrap()
+    target
 }
 
 /// A snapshot header of vault 1.

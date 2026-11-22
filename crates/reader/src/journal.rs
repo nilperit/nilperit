@@ -142,7 +142,8 @@ impl<T: Target> Vault<T> {
 mod tests {
     use super::*;
     use crate::test_util::{
-        TestKeys, TestObject, block_on, build_pack, entry_object, header, test_seed, vault_with,
+        TestKeys, TestObject, block_on, build_pack, entry_object, header, node_vault_with,
+        test_seed, vault_with,
     };
     use nilperit_format::{Change, SnapshotId};
 
@@ -308,5 +309,18 @@ mod tests {
         let (c, _) = pack_of(&[&foreign, &child]);
         let result = replay(&[&c], &header(1, 0x32, 2_000, child_id, 2));
         assert!(matches!(result, Err(JournalError::Inconsistent(id, _)) if id == foreign_id));
+    }
+
+    #[test]
+    fn a_node_replays_the_journal_without_the_read_key() {
+        // A journal is made of W objects. The node needs no read key to replay it.
+        let (e1, e2, e3, ids) = three();
+        let (a, _) = pack_of(&[&e1, &e2, &e3]);
+        let vault = node_vault_with(&[&a], &[]);
+        let index = block_on(vault.scan_packs()).unwrap();
+        let head = header(1, 0x33, 3_000, ids[2], 3);
+        let state = block_on(vault.replay_journal(&index, &head)).unwrap();
+        assert_eq!(state.sequence, 3);
+        assert_eq!(state.items.len(), 2);
     }
 }
