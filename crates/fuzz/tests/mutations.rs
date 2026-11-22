@@ -171,3 +171,60 @@ fn the_seeds_are_accepted_by_the_decoders_that_they_are_for() {
 fn all(seeds: Vec<Vec<u8>>, accepts: impl Fn(&[u8]) -> bool) -> bool {
     seeds.iter().all(|seed| accepts(seed))
 }
+
+fn repository_path(path: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(path)
+}
+
+#[test]
+fn every_check_has_a_fuzz_target_and_a_place_in_the_workflow() {
+    // The targets of `cargo-fuzz` are files, and the workflow has a list. A new check without
+    // them would be tested, and never fuzzed.
+    let manifest = std::fs::read_to_string(repository_path("fuzz/Cargo.toml")).unwrap();
+    let workflow = std::fs::read_to_string(repository_path(".github/workflows/fuzz.yml")).unwrap();
+    for (name, _) in TARGETS {
+        let file = repository_path(&format!("fuzz/fuzz_targets/{name}.rs"));
+        let source = std::fs::read_to_string(&file)
+            .unwrap_or_else(|_| panic!("no fuzz target for {name}: {}", file.display()));
+        assert!(
+            source.contains(&format!("nilperit_fuzz::checks::{name}(data)")),
+            "the fuzz target {name} does not call its check"
+        );
+        assert!(
+            manifest.contains(&format!(
+                "name = \"{name}\"\npath = \"fuzz_targets/{name}.rs\""
+            )),
+            "fuzz/Cargo.toml has no [[bin]] for {name}"
+        );
+        assert!(
+            workflow.contains(&format!("          - {name}\n")),
+            "the matrix of the workflow Fuzz has no {name}"
+        );
+    }
+    // And no target without a check.
+    let files = std::fs::read_dir(repository_path("fuzz/fuzz_targets"))
+        .unwrap()
+        .count();
+    assert_eq!(files, TARGETS.len());
+}
+
+#[test]
+fn the_inputs_that_a_fuzzer_found_pass_the_checks() {
+    // `regressions/<check>/<file>`: an input that made a check fail once. See the README there.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("regressions");
+    let mut run = 0;
+    for (name, check) in TARGETS {
+        let Ok(entries) = std::fs::read_dir(root.join(name)) else {
+            continue;
+        };
+        for entry in entries {
+            let path = entry.unwrap().path();
+            let input = std::fs::read(&path).unwrap();
+            check(&input);
+            run += 1;
+        }
+    }
+    eprintln!("{run} inputs from fuzzers");
+}

@@ -1,0 +1,6 @@
+# The fuzz targets need a nightly toolchain: libFuzzer and the sanitizers are unstable features.
+# The date is fixed, so that a new nightly does not break the targets by surprise. Change it
+# on purpose, with a pull request.
+[toolchain]
+channel = "nightly-2026-11-21"
+profile = "minimal"

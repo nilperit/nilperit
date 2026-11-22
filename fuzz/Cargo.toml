@@ -1,0 +1,122 @@
+# The coverage-guided fuzz targets of NilPerit, for `cargo-fuzz` (libFuzzer).
+#
+# This is not part of the workspace of the repository: it needs a nightly toolchain (see
+# `rust-toolchain.toml`), and libFuzzer is a build tool, not code that ships. Every target
+# calls one check of the crate `nilperit-fuzz`, the same checks that the mutation tests run.
+# See README.md in this folder.
+
+[package]
+name = "nilperit-fuzz-targets"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+nilperit-fuzz = { path = "../crates/fuzz" }
+
+# A workspace of its own, so that cargo does not take this folder for a member of the one
+# of the repository.
+[workspace]
+
+[[bin]]
+name = "canonical"
+path = "fuzz_targets/canonical.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "envelope"
+path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "content_object"
+path = "fuzz_targets/content_object.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "item_record"
+path = "fuzz_targets/item_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "delta_entry"
+path = "fuzz_targets/delta_entry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "snapshot_header"
+path = "fuzz_targets/snapshot_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vault_config"
+path = "fuzz_targets/vault_config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lock_file"
+path = "fuzz_targets/lock_file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "object_table"
+path = "fuzz_targets/object_table.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pack_parts"
+path = "fuzz_targets/pack_parts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pack_with_table"
+path = "fuzz_targets/pack_with_table.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pack_with_object"
+path = "fuzz_targets/pack_with_object.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encryption"
+path = "fuzz_targets/encryption.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chunker"
+path = "fuzz_targets/chunker.rs"
+test = false
+doc = false
+bench = false

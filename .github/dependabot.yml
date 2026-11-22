@@ -23,3 +23,15 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+
+  # The fuzz targets have a workspace and a lock file of their own.
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
