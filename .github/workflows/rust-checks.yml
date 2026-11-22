@@ -79,6 +79,26 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked --no-fail-fast
 
+  # One check for all the systems. The rules of the repository can require `tests`, and then a
+  # system can be added to the matrix, or taken out, without a change to the rules. A matrix
+  # job has no check of its own with the name of the job: only its parts have one.
+  tests:
+    name: tests
+    needs: test
+    # Without this the job is skipped when a test job fails, and a skipped check is not a
+    # failure for the rules of the repository.
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      # The result of a matrix is `success` only when every part of it succeeded. It goes
+      # through an environment variable, not into the script.
+      - name: Every system passed
+        env:
+          RESULT: ${{ needs.test.result }}
+        run: test "$RESULT" = success
+
   deny:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
