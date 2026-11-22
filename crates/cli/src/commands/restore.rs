@@ -475,10 +475,23 @@ mod tests {
             rel(b"docs/deep/c.txt").unwrap(),
             PathBuf::from("docs/deep/c.txt")
         );
-        // Names that look strange are names: a dot at the start, three dots, spaces.
+        // Names that look strange are names: a dot at the start, spaces inside.
         assert_eq!(rel(b".hidden").unwrap(), PathBuf::from(".hidden"));
-        assert_eq!(rel(b"...").unwrap(), PathBuf::from("..."));
+        assert_eq!(rel(b"...x").unwrap(), PathBuf::from("...x"));
         assert_eq!(rel(b"a b/c  d").unwrap(), PathBuf::from("a b/c  d"));
+    }
+
+    #[test]
+    fn a_name_of_dots_is_a_name_on_unix_and_not_on_windows() {
+        // Windows removes the dots at the end of a name, so `...` would not be a file there.
+        // The rule of Windows is used on Windows only.
+        if cfg!(windows) {
+            assert_eq!(rel(b"..."), Err(Reason::UnsafeName));
+            assert_eq!(rel(b"a/b."), Err(Reason::UnsafeName));
+        } else {
+            assert_eq!(rel(b"...").unwrap(), PathBuf::from("..."));
+            assert_eq!(rel(b"a/b.").unwrap(), PathBuf::from("a/b."));
+        }
     }
 
     #[test]
