@@ -39,14 +39,22 @@ pub fn pack_path(name: &PackName) -> String {
 pub fn parse_pack_path(path: &str) -> Option<PackName> {
     let rest = path.strip_prefix(PACKS_DIR)?.strip_prefix('/')?;
     let (dir, name) = rest.split_once('/')?;
-    if name.len() != 64 || !name.starts_with(dir) || dir.len() != 2 {
+    if !name.starts_with(dir) || dir.len() != 2 {
         return None;
     }
-    let mut bytes = [0u8; 32];
-    for (byte, pair) in bytes.iter_mut().zip(name.as_bytes().chunks(2)) {
+    parse_hex(name).map(PackName::from_bytes)
+}
+
+/// Reads exactly `N` bytes from `2 * N` lowercase hexadecimal characters.
+fn parse_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
+    if text.len() != 2 * N {
+        return None;
+    }
+    let mut bytes = [0u8; N];
+    for (byte, pair) in bytes.iter_mut().zip(text.as_bytes().chunks(2)) {
         *byte = (hex_value(pair[0])? << 4) | hex_value(pair[1])?;
     }
-    Some(PackName::from_bytes(bytes))
+    Some(bytes)
 }
 
 fn hex_value(c: u8) -> Option<u8> {
@@ -62,6 +70,13 @@ pub fn snapshot_path(id: &SnapshotId) -> String {
     format!("{SNAPSHOTS_DIR}/{id}")
 }
 
+/// Reads the snapshot ID from a path in `snapshots/` (see `snapshot_path`). It
+/// returns `None` for any other path.
+pub fn parse_snapshot_path(path: &str) -> Option<SnapshotId> {
+    let name = path.strip_prefix(SNAPSHOTS_DIR)?.strip_prefix('/')?;
+    parse_hex(name).map(SnapshotId::from_bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,6 +90,23 @@ mod tests {
     fn parse_pack_path_reads_what_pack_path_writes() {
         let name = PackName::from_bytes(core::array::from_fn(|i| (i * 9) as u8));
         assert_eq!(parse_pack_path(&pack_path(&name)), Some(name));
+    }
+
+    #[test]
+    fn parse_snapshot_path_reads_what_snapshot_path_writes() {
+        let id = SnapshotId::from_bytes(core::array::from_fn(|i| (i * 17) as u8));
+        assert_eq!(parse_snapshot_path(&snapshot_path(&id)), Some(id));
+        for bad in [
+            "snapshots",
+            "snapshots/",
+            "snapshots/00",
+            "snapshots/00112233445566778899AABBCCDDEEFF",
+            "snapshots/00112233445566778899aabbccddeeff0",
+            "snapshots/a/00112233445566778899aabbccddeeff",
+            "packs/00112233445566778899aabbccddeeff",
+        ] {
+            assert!(parse_snapshot_path(bad).is_none(), "{bad}");
+        }
     }
 
     #[test]
