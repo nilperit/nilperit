@@ -13,7 +13,11 @@ Remove an item when it is done. The history is in git.
   - decide whether to keep them or to switch to `libcrux-ml-kem` (formally verified, but then we have to write the X-Wing combiner ourselves);
   - check whether X-Wing is a final standard by then. If it is, give it a new algorithm name and update ADR 0012 and ADR 0018.
 - **Review the seal construction** (section 3.3.2.2, ADR 0018). It is a simple KEM-DEM that we composed from reviewed parts, but nobody with cryptography expertise has reviewed the composition yet. This also covers the use of the header hash as associated data, and the context strings.
-- **Record the audit status of every crate that handles keys or untrusted data**, in the pull request that adds it (AGENTS.md). Open: `chacha20poly1305`, `x25519-dalek`, `bip39`, `miniz_oxide`, `fastcdc`. Already added: `blake3`, `zeroize`, `minicbor`. For `miniz_oxide` 0.9.1 we checked that it forbids `unsafe` code, but we do not know its audit status.
+- **Audit status of the crates that handle keys or untrusted data** (as the crates' own READMEs say, checked on 2026-11-22). Re-check before version 1, and read which version an audit covered:
+  - `chacha20poly1305` 0.11, `chacha20` 0.10 and `poly1305` 0.9: one NCC Group audit (2020), no significant findings. The `poly1305` README says that the audit predates its AVX2 backend, which has not been audited.
+  - `x-wing` 0.1.1 and `ml-kem` 0.3.4: never independently audited.
+  - `x25519-dalek` 3.0.0, `curve25519-dalek` 5.0.0, `bip39` 3.0.0 and `bitcoin_hashes` 0.14: the READMEs say nothing about audits. ADR 0012 mentions a Quarkslab audit of an older `curve25519-dalek`. We have not checked it. `bip39` only maps the root seed to words and back, but it handles the root seed.
+  - `blake3`, `zeroize` and `minicbor` were added earlier. Still to record when they are added: `miniz_oxide` (we know that 0.9.1 forbids `unsafe` code) and `fastcdc`.
 - **Fuzzing.** Add fuzz targets for the strict CBOR checker, the pack parser, and the decompress-and-verify path (ADR 0016 promises the last one).
 - **Review every draft constant before it freezes.** The context strings (dated `2026-11-22`), the magic bytes and end magic of a pack, and the algorithm names. Section 3.2.7 of the format says that the context strings are fixed for a format version.
 
