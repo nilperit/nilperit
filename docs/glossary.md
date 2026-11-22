@@ -20,6 +20,9 @@ A *cache* that shows each *item* version that a *source* ever had and that *item
 **Archive tree**
 A tree in a *checkpoint* that contains all *item* versions that do not exist at that time but that *item retention* still keeps (old versions and deleted items), with the time first seen and the time last seen. An archive tree is *truth*.
 
+**Body**
+The CBOR map in an *envelope* that contains the fields of an *object*. The keys are unsigned integers.
+
 **Bundled reader**
 The reader software that a *vault* contains. It lets a person read the vault without network access and without other software. See *nilperit-recover*.
 
@@ -65,14 +68,17 @@ The bytes of one stored thing, for example one raw email message or one file.
 **Content object**
 An *object* that describes one *content*: the ordered list of *chunk IDs*, the total length, a keyed hash of the full content, and the *chunking profile*.
 
-**Data pack**
-A *pack* that contains *truth*: *chunks*, *content objects*, *item records*, *journal entries*, and the nodes of *checkpoint trees* and *archive trees*.
-
 **Context string**
 The fixed string that BLAKE3 `derive_key` uses together with its key material. Each *domain key* has its own context string.
 
+**Data pack**
+A *pack* that contains *truth*: *chunks*, *content objects*, *item records*, *journal entries*, and the nodes of *checkpoint trees* and *archive trees*.
+
 **Dedup key**
 The key from which NilPerit derives the *domain keys*. The *node* has this key.
+
+**Delta entry**
+A *journal entry* that contains only the changes since the previous journal entry of the same *source*.
 
 **Domain key**
 The key of one *hash domain*. NilPerit derives it from the *dedup key* and the *context string* of the domain.
@@ -86,14 +92,11 @@ Two *journal entries* with the same parent, where each entry is named by an auth
 **Grace period**
 The time that must pass after a *condemnation record* or after the creation of an *orphan* before a *sweep* can remove the data.
 
-**Delta entry**
-A *journal entry* that contains only the changes since the previous journal entry of the same *source*.
+**Hash domain**
+One kind of keyed hash: *object ID*, *item key*, or content hash. Each hash domain has its own *domain key*. A hash of one hash domain never equals a hash of another.
 
 **Index**
 A *cache* that gives the location of each object: *pack*, offset, and length.
-
-**Hash domain**
-One kind of keyed hash: *object ID*, *item key*, or content hash. Each hash domain has its own *domain key*. A hash of one hash domain never equals a hash of another.
 
 **Item**
 One thing from a *source*, for example one email message or one file.
@@ -113,11 +116,11 @@ The rules that control how long NilPerit keeps *item* versions and deleted items
 **Journal**
 The append-only chain of *journal entries* of one *source*. The journal is *truth*.
 
-**Journal head**
-The newest committed *journal entry* of a *source*: the entry that the newest authenticated *snapshot header* names. The newest snapshot header is the one with the highest *sequence number* in its *journal position*. A new journal entry uses the journal head as its parent.
-
 **Journal entry**
 One immutable record in a *journal*: a *delta entry* or a *checkpoint*.
+
+**Journal head**
+The newest committed *journal entry* of a *source*: the entry that the newest authenticated *snapshot header* names. The newest snapshot header is the one with the highest *sequence number* in its *journal position*. A new journal entry uses the journal head as its parent.
 
 **Journal position**
 The ID and *sequence number* of a *journal entry*. A *snapshot header* records the journal position of the *journal head* after that *snapshot*.
@@ -134,14 +137,11 @@ The reader-only program. It can list, extract, verify, and salvage data. It cann
 **Node**
 A running NilPerit process that gets data from *sources* and writes it to a *vault*.
 
-**Body**
-The CBOR map in an *envelope* that contains the fields of an *object*. The keys are unsigned integers.
+**Node credential**
+The set of keys that a *node* needs to write: the public part of the *read key*, the *dedup key*, the *writer key*, and the *chunker seed*. With the node credential, a node can add data but cannot read stored *content*.
 
 **Object**
 One encoded unit of data in a *vault*, for example a *chunk*, a *content object*, an *item record*, a *journal entry*, or a tree node. Each object has an *object ID*, an object type, and a *key class*.
-
-**Stored bytes**
-The bytes of an *object* that NilPerit hashes. For an enveloped object, they are the encoded *envelope*, exactly as a writer wrote it. For a raw object (a *chunk*), they are the plaintext before compression. NilPerit computes the *object ID* from the stored bytes and never from a new encoding.
 
 **Object ID**
 The hash of the *stored bytes* of an *object* in the *hash domain* for object IDs, with the object type in front of the bytes. The same object has the same object ID in all *replicas*.
@@ -151,9 +151,6 @@ The list in the trailer of a *pack* that gives, for each *object* in the pack, i
 
 **Orphan**
 A file that is not part of a completed *commit*, for example a *pack* from an interrupted synchronization. An orphan is not an error.
-
-**Node credential**
-The set of keys that a *node* needs to write: the public part of the *read key*, the *dedup key*, the *writer key*, and the *chunker seed*. With the node credential, a node can add data but cannot read stored *content*.
 
 **Pack**
 An immutable file that contains many encrypted objects. The name of a pack is the hash of its encrypted bytes. See *data pack* and *metadata pack*.
@@ -182,29 +179,32 @@ A copy of a *vault*, or of a part of a vault, on a *target*.
 **Salvage**
 A recovery procedure that scans all readable *packs* and rebuilds as much data as possible without *caches*.
 
-**Sequence number**
-The position of a *journal entry* in its *journal*: the sequence number of its parent plus one.
+**Scrub**
+A procedure that reads stored data and checks its integrity.
 
 **Seal**
 To encrypt a key so that only the holder of a private key can open it. NilPerit seals each *pack key* to the public part of the *read key* with a hybrid key encapsulation (X25519 and ML-KEM).
 
-**Scrub**
-A procedure that reads stored data and checks its integrity.
+**Sequence number**
+The position of a *journal entry* in its *journal*: the sequence number of its parent plus one.
 
 **Snapshot**
 The state of one *source* at one point in time.
 
-**Snapshot ID**
-The identifier of one *snapshot*.
-
 **Snapshot header**
 A small *cache* object that points to the *item map* of a *snapshot* and records the *journal position* of the *journal head*. NilPerit writes it last during a *commit*. It has *key class* W.
+
+**Snapshot ID**
+The identifier of one *snapshot*.
 
 **Snapshot retention**
 The rules that control which *snapshots* NilPerit keeps.
 
 **Source**
 One *connector* account with one selection, for example "Gmail, label Banking". Each source has its own *journal*, *snapshots*, retention rules (*snapshot retention* and *item retention*), and *priority*.
+
+**Stored bytes**
+The bytes of an *object* that NilPerit hashes. For an enveloped object, they are the encoded *envelope*, exactly as a writer wrote it. For a raw object (a *chunk*), they are the plaintext before compression. NilPerit computes the *object ID* from the stored bytes and never from a new encoding.
 
 **Sweep**
 A procedure that removes *packs* whose *objects* no live root uses any more, after the *grace period*. Live roots are the *journal heads*, and all *journal entries*, *checkpoints*, *checkpoint trees*, and *archive trees* that no active *condemnation record* marks. *Snapshots* are not roots, because they are *caches*.
