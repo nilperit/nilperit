@@ -6,7 +6,7 @@
 
 Pre-alpha. The format is specified far enough to build a first working system. The format crate and the crypto crate are done: the strict CBOR check, the envelope, all object types that the first system needs (content object, item record, delta entry, snapshot header, object table), the pack structure, the vault config, key derivation from the recovery phrase, authenticated encryption, and the seal. Every part has test vectors in [format.md](format.md) appendix A.
 
-The reader crate is done: it opens a vault and its packs, replays the journal and reads the content of an item, behind a storage trait. A node can open a vault without the read key. The writer crate has the fixed-size chunker, the pack builder, the commit, the writer lock, the creation of a vault, the connector trait and the sync engine. All of it is tested against a vault in memory, and the reader reads back what the writer wrote. The file-system target (`nilperit-target-fs`) does the same on a folder, and a test runs the whole stack on disk. The folder connector (`nilperit-connector-fs`) reads a folder, and a test takes a folder into a vault on disk and back. `nilperit init` makes a vault, shows its recovery phrase once and saves the credential of the machine, `nilperit sync` backs up a folder into it, and `nilperit ls` lists the sources and the items. What is missing for the first working system is `restore`.
+The reader crate is done: it opens a vault and its packs, replays the journal and reads the content of an item, behind a storage trait. A node can open a vault without the read key. The writer crate has the fixed-size chunker, the pack builder, the commit, the writer lock, the creation of a vault, the connector trait and the sync engine. All of it is tested against a vault in memory, and the reader reads back what the writer wrote. The file-system target (`nilperit-target-fs`) does the same on a folder, and a test runs the whole stack on disk. The folder connector (`nilperit-connector-fs`) reads a folder, and a test takes a folder into a vault on disk and back. `nilperit init` makes a vault, shows its recovery phrase once and saves the credential of the machine, `nilperit sync` backs up a folder into it, `nilperit ls` lists the sources and the items, and `nilperit restore` writes the files back. The first working system is complete: a folder goes into a vault, and comes back out.
 
 ## The first working system
 
@@ -29,6 +29,7 @@ The order of work. Each step is its own pull request:
 - Retention, condemn, and sweep. Nothing is ever deleted.
 - Parity data, replicas, scrub, and repair.
 - The browser reader and the reader-only recovery binary.
+- Restoring an older version. `restore` gives the newest state of a source. The older states are in the journal, and no command reads them yet.
 - Sources in the vault. A source (name, connector, priority) lives in the local configuration of the node for now. The vault will get it before format version 1 (see pre-v1.md).
 - Gmail and other cloud connectors. The local folder comes first.
 

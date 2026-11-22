@@ -4,14 +4,14 @@
 //! phrase. Names are shown: this is direct output to the person, and a list of what is in
 //! the vault is useless without them (AGENTS.md).
 
+use super::common::{OpenVault, open_vault, parse_source_id};
 use crate::cli::LsArgs;
 use crate::display::{size, time};
 use crate::environment::Environment;
 use crate::error::CliError;
 use crate::exec::block_on;
-use crate::phrase::read_seed;
 use nilperit_format::SourceId;
-use nilperit_reader::{Snapshots, Vault, VaultError};
+use nilperit_reader::{Snapshots, Vault};
 use nilperit_target_fs::FsTarget;
 use nilperit_writer::{Credential, source_id};
 use std::io::{BufRead, Write};
@@ -31,12 +31,12 @@ pub fn run(
     // Check the arguments before the person types the phrase.
     let by_id = args.source_id.as_deref().map(parse_source_id).transpose()?;
 
-    let seed = read_seed(args.phrase.phrase_file.as_deref(), env, stdin)?;
-    let vault =
-        block_on(Vault::open(FsTarget::new(&args.vault), &seed)).map_err(CliError::Vault)?;
-    let index = block_on(vault.scan_packs()).map_err(|e| CliError::Vault(VaultError::Target(e)))?;
-    let snapshots =
-        block_on(vault.read_snapshots()).map_err(|e| CliError::Vault(VaultError::Target(e)))?;
+    let OpenVault {
+        seed,
+        vault,
+        index,
+        snapshots,
+    } = open_vault(&args.vault, args.phrase.phrase_file.as_deref(), env, stdin)?;
     let mut warnings = Warnings {
         packs: index.skipped().len(),
         snapshots: snapshots.skipped().len(),
@@ -60,19 +60,6 @@ pub fn run(
     } else {
         ExitCode::SUCCESS
     })
-}
-
-/// A source ID is 32 lowercase or capital hexadecimal characters.
-fn parse_source_id(text: &str) -> Result<SourceId, CliError> {
-    if text.len() != 32 || !text.is_ascii() {
-        return Err(CliError::BadSourceId);
-    }
-    let mut bytes = [0u8; 16];
-    for (byte, pair) in bytes.iter_mut().zip(text.as_bytes().chunks(2)) {
-        let pair = std::str::from_utf8(pair).map_err(|_| CliError::BadSourceId)?;
-        *byte = u8::from_str_radix(pair, 16).map_err(|_| CliError::BadSourceId)?;
-    }
-    Ok(SourceId::from_bytes(bytes))
 }
 
 /// What was damaged or could not be read. The person is told on the error output.
