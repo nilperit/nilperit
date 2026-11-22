@@ -24,7 +24,7 @@ Almost everything NilPerit stores is an **object**. The exceptions are the plain
 | Checkpoint tree, archive tree | Truth | W | The full state at a checkpoint |
 | Item map, archive map | Cache | W | A fast view of one snapshot or of the archive |
 | Snapshot header | Cache | W | Entry point for one snapshot; marks the journal head |
-| Index | Cache | W | Where each object is: pack, offset, length |
+| Index | Cache | W | Where each object is: pack, offset, packed size |
 
 The pattern: **anything sensitive is R** (bytes, names, subjects, labels), and **the node only ever sees opaque IDs and structure** (W). A server that holds only the node credential can add data and clean up, but it cannot read anything.
 
@@ -89,7 +89,8 @@ flowchart LR
 ```
 
 - The **pack key** opens the R objects. It is sealed to the read key with a hybrid post-quantum KEM, so only the owner can open it.
-- The **object table** (W) lists every object in the pack: object ID, type, key class, offset, length. The node reads it to rebuild the index and to clean up, without ever opening an R object.
+- The **object table** (W) lists every object in the pack: object ID, type, key class, offset, packed size, compression, unpacked size. The node reads it to rebuild the index and to clean up, without ever opening an R object.
+- A writer can **compress** an object before it encrypts it. The object table names the algorithm (for example `none` or `deflate`) and the unpacked size, so a reader can undo it and check the result. Object IDs never depend on compression.
 - The **name of a pack** is the hash of the whole encrypted file. Anyone can detect a damaged pack without keys.
 
 ## IDs and hash domains

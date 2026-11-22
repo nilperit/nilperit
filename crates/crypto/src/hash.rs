@@ -9,7 +9,7 @@ use core::fmt;
 
 use zeroize::Zeroize;
 
-/// Length of every hash and every key in this module, in bytes.
+/// Size of every hash and every key in this module, in bytes.
 pub const HASH_LEN: usize = 32;
 
 /// One kind of keyed hash (format.md 3.2.5).
@@ -41,17 +41,17 @@ impl HashDomain {
     }
 }
 
-/// An input is longer than a length field of the format can hold.
+/// An input is larger than a size field of the format can hold.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LengthError;
+pub struct SizeError;
 
-impl fmt::Display for LengthError {
+impl fmt::Display for SizeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("input is longer than 4 GiB minus 1 byte")
+        f.write_str("input is larger than 4 GiB minus 1 byte")
     }
 }
 
-impl core::error::Error for LengthError {}
+impl core::error::Error for SizeError {}
 
 /// The dedup key. The node has it (format.md 3.2.3).
 pub struct DedupKey([u8; HASH_LEN]);
@@ -138,19 +138,19 @@ impl DomainKeys {
 
     /// The item key (format.md 5.6.5).
     ///
-    /// The hash input is the 4-byte little-endian length of `source_id`,
-    /// `source_id`, the 4-byte little-endian length of `native_id`, `native_id`.
+    /// The hash input is the 4-byte little-endian size of `source_id`,
+    /// `source_id`, the 4-byte little-endian size of `native_id`, `native_id`.
     pub fn item_key(
         &self,
         source_id: &[u8],
         native_id: &[u8],
-    ) -> Result<[u8; HASH_LEN], LengthError> {
-        let source_len = u32::try_from(source_id.len()).map_err(|_| LengthError)?;
-        let native_len = u32::try_from(native_id.len()).map_err(|_| LengthError)?;
+    ) -> Result<[u8; HASH_LEN], SizeError> {
+        let source_size = u32::try_from(source_id.len()).map_err(|_| SizeError)?;
+        let native_size = u32::try_from(native_id.len()).map_err(|_| SizeError)?;
         let mut h = self.item_key.hasher();
-        h.update(&source_len.to_le_bytes());
+        h.update(&source_size.to_le_bytes());
         h.update(source_id);
-        h.update(&native_len.to_le_bytes());
+        h.update(&native_size.to_le_bytes());
         h.update(native_id);
         Ok(h.finalize().into())
     }

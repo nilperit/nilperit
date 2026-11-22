@@ -15,7 +15,7 @@ Object IDs also need the object type. Most objects are CBOR envelopes that conta
 - An **object ID** is the keyed BLAKE3 hash, with the object ID domain key, of the **type ID as a 4-byte little-endian integer followed by the stored bytes**.
 - The type ID comes from the **object table** of the pack. For an enveloped object, it must equal the type in the envelope, and a reader rejects the object otherwise.
 - The **chunk stays raw**: its stored bytes are the plaintext chunk before compression. A raw object type must have key class R. In this case, losing the pack trailer loses the pack key as well, so no object becomes unreadable but untyped.
-- An **item key** hashes the source ID and the native ID with a 4-byte length in front of each, so the two parts cannot be moved against each other.
+- An **item key** hashes the source ID and the native ID with a 4-byte size in front of each, so the two parts cannot be moved against each other.
 - The **content hash** is a keyed hash of the full plaintext in its own domain. It needs no prefix, so a writer can hash a large file as a stream.
 
 ## Consequences
@@ -25,7 +25,7 @@ Object IDs also need the object type. Most objects are CBOR envelopes that conta
 - The node derives three domain keys when it starts. This is cheap.
 - A reader needs the dedup key to verify an object ID. The AEAD tag already protects against damage, and the owner and the node both have the dedup key.
 - The format has no multihash-style algorithm byte in IDs. A change of the hash function is a new format version (ADR 0011).
-- Open: where an object records its compression. The hash uses the bytes before compression, because zstd output is not stable across versions.
+- The hash uses the bytes before compression, because the output of a compressor is not stable across versions. The object table records the compression of each object (ADR 0016).
 
 ## Alternatives considered
 

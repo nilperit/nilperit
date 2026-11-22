@@ -3,7 +3,7 @@
 
 use core::fmt;
 
-/// Length of every hash in the format, in bytes.
+/// Size of every hash in the format, in bytes.
 pub const HASH_LEN: usize = 32;
 
 macro_rules! hash_type {
