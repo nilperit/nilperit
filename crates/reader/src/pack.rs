@@ -9,13 +9,18 @@
 //! that needs a read of the whole file. The tags check every part that a reader
 //! uses. A scrub checks the names (format.md 9.2, 10.1).
 
+use crate::keys::Keys;
 use crate::layout::pack_path;
 use crate::target::{Target, TargetError};
 use alloc::vec::Vec;
 use core::fmt;
-use nilperit_crypto::{WriterKey, decrypt};
+use nilperit_crypto::seal::KEM_NAME;
+use nilperit_crypto::{AeadKey, SealError, WriterKey, decrypt, open_seal};
 use nilperit_format::pack::FOOTER_SIZE;
-use nilperit_format::{Footer, Header, ObjectTable, PackError, PackName, Trailer};
+use nilperit_format::{
+    Compression, Footer, Header, KeyClass, ObjectId, ObjectTable, ObjectTableEntry, PackError,
+    PackName, Trailer,
+};
 
 /// A pack could not be opened.
 #[derive(Debug)]
@@ -50,6 +55,64 @@ impl From<TargetError> for PackOpenError {
 impl From<PackError> for PackOpenError {
     fn from(e: PackError) -> Self {
         Self::Format(e)
+    }
+}
+
+/// The associated data of a packed object: the object ID and the type ID as 4
+/// bytes, little-endian (format.md 6.7.2.3).
+fn associated_data(entry: &ObjectTableEntry) -> [u8; 36] {
+    let mut aad = [0u8; 36];
+    aad[..32].copy_from_slice(entry.object_id.as_bytes());
+    aad[32..].copy_from_slice(&entry.object_type.to_le_bytes());
+    aad
+}
+
+/// An object could not be read from a pack.
+#[derive(Debug)]
+pub enum ObjectReadError {
+    /// The target failed.
+    Target(TargetError),
+    /// The object table of the pack has no entry with this object ID.
+    NotInPack,
+    /// The pack key of an R object cannot be opened because the pack uses an
+    /// algorithm that this code does not know.
+    UnknownAlgorithm,
+    /// The seal does not open with the read key.
+    Seal(SealError),
+    /// The tag of the object is not correct: the object is damaged, or it does
+    /// not belong to its entry (format.md 6.7.2.3).
+    NotAuthentic,
+    /// The DEFLATE stream is not valid, or it is longer than the unpacked size.
+    BadCompression,
+    /// The unpacked bytes do not have the unpacked size of the table.
+    SizeMismatch,
+    /// The unpacked bytes do not have the object ID of their entry.
+    IdMismatch,
+    /// The object does not fit in the memory of this reader (format.md 6.7.6.3).
+    TooLarge,
+}
+
+impl fmt::Display for ObjectReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Target(e) => e.fmt(f),
+            Self::NotInPack => f.write_str("the object is not in the pack"),
+            Self::UnknownAlgorithm => f.write_str("the pack uses an unknown algorithm"),
+            Self::Seal(e) => write!(f, "the seal does not open: {e}"),
+            Self::NotAuthentic => f.write_str("the object is not authentic"),
+            Self::BadCompression => f.write_str("the compressed bytes are not valid"),
+            Self::SizeMismatch => f.write_str("the object does not have its unpacked size"),
+            Self::IdMismatch => f.write_str("the object does not have its object ID"),
+            Self::TooLarge => f.write_str("the object is too large for this reader"),
+        }
+    }
+}
+
+impl core::error::Error for ObjectReadError {}
+
+impl From<TargetError> for ObjectReadError {
+    fn from(e: TargetError) -> Self {
+        Self::Target(e)
     }
 }
 
@@ -116,6 +179,64 @@ impl Pack {
             seal: trailer.seal.to_vec(),
             table,
         })
+    }
+
+    /// Reads one object and returns its stored bytes (format.md 6.7.5, step 5).
+    ///
+    /// It checks the tag, decompresses to exactly the unpacked size, and checks the
+    /// object ID. It returns no byte before all of these checks pass.
+    pub async fn read_object<T: Target>(
+        &self,
+        target: &T,
+        id: &ObjectId,
+        keys: &Keys,
+    ) -> Result<Vec<u8>, ObjectReadError> {
+        let entry = self
+            .table
+            .entries
+            .iter()
+            .find(|entry| entry.object_id == *id)
+            .ok_or(ObjectReadError::NotInPack)?;
+        // Check the size first, so that a reader with little memory stops early.
+        let unpacked_size =
+            usize::try_from(entry.unpacked_size).map_err(|_| ObjectReadError::TooLarge)?;
+
+        // The table was checked in `open`, so the range lies inside the body.
+        let end = entry.offset + u64::from(entry.packed_size);
+        let packed = target
+            .read_range(&pack_path(&self.name), entry.offset..end)
+            .await?;
+
+        let key = match entry.key_class {
+            KeyClass::W => keys.writer().pack_object_key(),
+            KeyClass::R => self.open_pack_key(keys)?,
+        };
+        let compressed = decrypt(&key, &associated_data(entry), &packed)
+            .map_err(|_| ObjectReadError::NotAuthentic)?;
+
+        let stored = match entry.compression {
+            Compression::None => compressed,
+            Compression::Deflate => {
+                miniz_oxide::inflate::decompress_to_vec_with_limit(&compressed, unpacked_size)
+                    .map_err(|_| ObjectReadError::BadCompression)?
+            }
+        };
+        if stored.len() != unpacked_size {
+            return Err(ObjectReadError::SizeMismatch);
+        }
+        let expected = keys.domains().object_id(entry.object_type, &stored);
+        if expected != *entry.object_id.as_bytes() {
+            return Err(ObjectReadError::IdMismatch);
+        }
+        Ok(stored)
+    }
+
+    /// Opens the sealed pack key (format.md 3.3.2.3).
+    fn open_pack_key(&self, keys: &Keys) -> Result<AeadKey, ObjectReadError> {
+        if self.header.key_encapsulation.as_deref() != Some(KEM_NAME) {
+            return Err(ObjectReadError::UnknownAlgorithm);
+        }
+        open_seal(keys.read(), &self.seal, &self.header_hash).map_err(ObjectReadError::Seal)
     }
 
     /// The name of the pack.
@@ -300,5 +421,204 @@ mod tests {
             result,
             Err(PackOpenError::Target(TargetError::Other(_)))
         ));
+    }
+
+    // ---- Reading objects
+
+    use crate::Keys;
+    use crate::test_util::{TestKeys, TestObject, build_pack};
+    use nilperit_crypto::{DedupKey, ReadKey};
+    use nilperit_format::ObjectId;
+
+    // The object ID of the content object in A.8.3, and its 82 stored bytes.
+    const A8_CONTENT_ID: &str = "286259555c0bdd521d9b571868bdd3a2f0312c337ece16c43b8d78ffc246a12e";
+    const A8_CONTENT: &str = "a30002010102a40181582009c8888470572d682a266f04f412785427dddaa76b540dfaf6d228727e51830e0205035820ba57c82d8e9d4648188e4ef7eac18ec0c841bd7f817d115e1ed84bc0c05cb20e0401";
+    const A8_CHUNK_ID: &str = "09c8888470572d682a266f04f412785427dddaa76b540dfaf6d228727e51830e";
+
+    // The keys of A.8: dedup key `00 .. 1f`, writer key `20 .. 3f`. The read key
+    // is not part of the vector: its seal is a placeholder.
+    fn a8_keys() -> Keys {
+        let dedup = DedupKey::from_bytes(core::array::from_fn(|i| i as u8));
+        Keys::new(writer(), ReadKey::from_seed([9; 32]), &dedup)
+    }
+
+    fn oid(hex: &str) -> ObjectId {
+        ObjectId::from_bytes(unhex(hex).try_into().unwrap())
+    }
+
+    fn read(
+        pack: &Pack,
+        target: &MemoryTarget,
+        id: &ObjectId,
+        keys: &Keys,
+    ) -> Result<Vec<u8>, ObjectReadError> {
+        block_on(pack.read_object(target, id, keys))
+    }
+
+    #[test]
+    fn reads_the_w_object_of_the_appendix_vector() {
+        let target = target_with(unhex(PACK_HEX));
+        let pack = block_on(Pack::open(&target, name(), &writer())).unwrap();
+        let stored = read(&pack, &target, &oid(A8_CONTENT_ID), &a8_keys()).unwrap();
+        assert_eq!(stored, unhex(A8_CONTENT));
+    }
+
+    #[test]
+    fn the_appendix_vector_has_no_seal_that_opens() {
+        // The chunk is an R object, and the seal of A.8 is a placeholder.
+        let target = target_with(unhex(PACK_HEX));
+        let pack = block_on(Pack::open(&target, name(), &writer())).unwrap();
+        let result = read(&pack, &target, &oid(A8_CHUNK_ID), &a8_keys());
+        assert!(matches!(result, Err(ObjectReadError::UnknownAlgorithm)));
+    }
+
+    #[test]
+    fn a_missing_object_is_not_in_the_pack() {
+        let target = target_with(unhex(PACK_HEX));
+        let pack = block_on(Pack::open(&target, name(), &writer())).unwrap();
+        let result = read(&pack, &target, &ObjectId::from_bytes([0; 32]), &a8_keys());
+        assert!(matches!(result, Err(ObjectReadError::NotInPack)));
+    }
+
+    #[test]
+    fn rejects_a_damaged_object_of_the_appendix_vector() {
+        let mut bytes = unhex(PACK_HEX);
+        // The content object is at 105..227. Change one byte of its ciphertext.
+        bytes[150] ^= 1;
+        let target = target_with(bytes);
+        let pack = block_on(Pack::open(&target, name(), &writer())).unwrap();
+        let result = read(&pack, &target, &oid(A8_CONTENT_ID), &a8_keys());
+        assert!(matches!(result, Err(ObjectReadError::NotAuthentic)));
+    }
+
+    /// Opens a pack that the test builder made.
+    fn built(objects: &[TestObject]) -> (Pack, MemoryTarget, TestKeys, Vec<ObjectId>) {
+        let keys = TestKeys::new(0x50);
+        let (bytes, ids) = build_pack(&keys, objects);
+        let name = PackName::from_bytes(*blake3::hash(&bytes).as_bytes());
+        let mut target = MemoryTarget::new();
+        target.insert(&pack_path(&name), bytes);
+        let pack = block_on(Pack::open(&target, name, &keys.writer)).unwrap();
+        (pack, target, keys, ids)
+    }
+
+    fn repetitive() -> Vec<u8> {
+        b"nilperit ".repeat(2000)
+    }
+
+    #[test]
+    fn reads_every_combination_of_key_class_and_compression() {
+        let objects = [
+            TestObject::new(1, KeyClass::R, Compression::None, b"hello"),
+            TestObject::new(1, KeyClass::R, Compression::Deflate, &repetitive()),
+            TestObject::new(2, KeyClass::W, Compression::None, b"content object"),
+            TestObject::new(2, KeyClass::W, Compression::Deflate, &repetitive()),
+            TestObject::new(1, KeyClass::R, Compression::None, b""),
+            TestObject::new(3, KeyClass::W, Compression::Deflate, b""),
+        ];
+        let (pack, target, keys, ids) = built(&objects);
+        let reader_keys = keys.keys();
+        for (object, id) in objects.iter().zip(&ids) {
+            let stored = read(&pack, &target, id, &reader_keys).unwrap();
+            assert_eq!(stored, object.stored);
+        }
+    }
+
+    #[test]
+    fn a_reader_with_the_wrong_read_key_cannot_open_an_r_object() {
+        let objects = [TestObject::new(
+            1,
+            KeyClass::R,
+            Compression::None,
+            b"secret",
+        )];
+        let (pack, target, keys, ids) = built(&objects);
+        let wrong = Keys::new(
+            WriterKey::from_bytes(*keys.writer.as_bytes()),
+            ReadKey::from_seed([0xee; 32]),
+            &keys.dedup,
+        );
+        let result = read(&pack, &target, &ids[0], &wrong);
+        assert!(matches!(result, Err(ObjectReadError::Seal(_))));
+    }
+
+    #[test]
+    fn rejects_an_object_that_does_not_have_its_object_id() {
+        let mut object = TestObject::new(1, KeyClass::W, Compression::None, b"data");
+        // The tag is right for the claimed ID, but the bytes do not hash to it.
+        let claimed = ObjectId::from_bytes([0x77; 32]);
+        object.claim_id = Some(claimed);
+        let (pack, target, keys, _) = built(&[object]);
+        let result = read(&pack, &target, &claimed, &keys.keys());
+        assert!(matches!(result, Err(ObjectReadError::IdMismatch)));
+    }
+
+    #[test]
+    fn rejects_the_wrong_unpacked_size() {
+        for (compression, size) in [
+            (Compression::None, 3),
+            (Compression::None, 12),
+            (Compression::Deflate, 3),
+            (Compression::Deflate, 12),
+        ] {
+            let mut object = TestObject::new(1, KeyClass::W, Compression::None, b"data data");
+            object.compression = compression;
+            object.claim_unpacked_size = Some(size);
+            let (pack, target, keys, ids) = built(&[object]);
+            let result = read(&pack, &target, &ids[0], &keys.keys());
+            assert!(
+                matches!(
+                    result,
+                    Err(ObjectReadError::SizeMismatch | ObjectReadError::BadCompression)
+                ),
+                "{compression:?} {size}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_a_compression_name_that_does_not_match_the_bytes() {
+        let mut object = TestObject::new(1, KeyClass::W, Compression::None, b"not deflate");
+        object.claim_compression = Some(Compression::Deflate);
+        let (pack, target, keys, ids) = built(&[object]);
+        let result = read(&pack, &target, &ids[0], &keys.keys());
+        assert!(matches!(result, Err(ObjectReadError::BadCompression)));
+    }
+
+    #[test]
+    fn rejects_a_deflate_bomb_without_allocating_its_output() {
+        // 1 MiB of zeros compresses to about 1 KiB. The table says 10 bytes.
+        let zeros = vec![0u8; 1 << 20];
+        let mut object = TestObject::new(1, KeyClass::W, Compression::Deflate, &zeros);
+        object.claim_unpacked_size = Some(10);
+        let (pack, target, keys, ids) = built(&[object]);
+        let result = read(&pack, &target, &ids[0], &keys.keys());
+        assert!(matches!(result, Err(ObjectReadError::BadCompression)));
+    }
+
+    #[test]
+    fn rejects_a_damaged_object_in_a_built_pack() {
+        let keys = TestKeys::new(0x50);
+        let objects = [TestObject::new(
+            1,
+            KeyClass::R,
+            Compression::Deflate,
+            &repetitive(),
+        )];
+        let (mut bytes, ids) = build_pack(&keys, &objects);
+        let name = PackName::from_bytes(*blake3::hash(&bytes).as_bytes());
+        let mut target = MemoryTarget::new();
+        target.insert(&pack_path(&name), bytes.clone());
+        let offset = block_on(Pack::open(&target, name, &keys.writer))
+            .unwrap()
+            .table()
+            .entries[0]
+            .offset as usize;
+        // Change one byte of the ciphertext. The table is not changed.
+        bytes[offset + 30] ^= 1;
+        target.insert(&pack_path(&name), bytes);
+        let pack = block_on(Pack::open(&target, name, &keys.writer)).unwrap();
+        let result = read(&pack, &target, &ids[0], &keys.keys());
+        assert!(matches!(result, Err(ObjectReadError::NotAuthentic)));
     }
 }

@@ -12,6 +12,11 @@ publish.workspace = true
 nilperit-format.workspace = true
 nilperit-crypto.workspace = true
 blake3 = { version = "1", default-features = false }
+miniz_oxide = { version = "0.9", default-features = false, features = ["with-alloc"] }
+
+[dev-dependencies]
+# Only for the random number generator of the tests.
+x-wing = { version = "0.1.1", default-features = false, features = ["zeroize"] }
 
 [lints]
 workspace = true
