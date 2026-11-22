@@ -341,9 +341,12 @@ dependencies = [
 name = "nilperit-writer"
 version = "0.0.0"
 dependencies = [
+ "blake3",
+ "miniz_oxide",
  "nilperit-crypto",
  "nilperit-format",
  "nilperit-reader",
+ "x-wing",
 ]
 
 [[package]]

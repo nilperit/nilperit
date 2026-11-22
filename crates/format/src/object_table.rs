@@ -34,6 +34,20 @@ impl KeyClass {
         }
     }
 
+    /// The key class that the format gives to an object type, or `None` for a type
+    /// that is not an object in a pack.
+    ///
+    /// A chunk and an item record have class R (format.md 5.1.4, 5.4.3). A content
+    /// object and a delta entry have class W (5.3.2, 5.5.7). A writer MUST NOT use
+    /// another class: a chunk with class W would be readable by the node.
+    pub const fn of_type(object_type: u32) -> Option<Self> {
+        match object_type {
+            object_type::CHUNK | object_type::ITEM_RECORD => Some(Self::R),
+            object_type::CONTENT_OBJECT | object_type::DELTA_ENTRY => Some(Self::W),
+            _ => None,
+        }
+    }
+
     fn from_str(s: &str) -> Option<Self> {
         match s {
             "R" => Some(Self::R),
@@ -254,6 +268,28 @@ mod tests {
             compression: Compression::None,
             unpacked_size: packed.saturating_sub(40),
         }
+    }
+
+    #[test]
+    fn the_key_class_of_each_object_type() {
+        assert_eq!(KeyClass::of_type(object_type::CHUNK), Some(KeyClass::R));
+        assert_eq!(
+            KeyClass::of_type(object_type::ITEM_RECORD),
+            Some(KeyClass::R)
+        );
+        assert_eq!(
+            KeyClass::of_type(object_type::CONTENT_OBJECT),
+            Some(KeyClass::W)
+        );
+        assert_eq!(
+            KeyClass::of_type(object_type::DELTA_ENTRY),
+            Some(KeyClass::W)
+        );
+        // The object table and the snapshot header are not objects in a pack.
+        assert_eq!(KeyClass::of_type(object_type::OBJECT_TABLE), None);
+        assert_eq!(KeyClass::of_type(object_type::SNAPSHOT_HEADER), None);
+        assert_eq!(KeyClass::of_type(0), None);
+        assert_eq!(KeyClass::of_type(99), None);
     }
 
     #[test]
