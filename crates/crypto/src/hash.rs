@@ -62,6 +62,12 @@ impl DedupKey {
         Self(bytes)
     }
 
+    /// The secret bytes, for the node credential. Handle them with care and
+    /// never log them.
+    pub fn as_bytes(&self) -> &[u8; HASH_LEN] {
+        &self.0
+    }
+
     /// Derives the key of one hash domain.
     pub fn domain_key(&self, domain: HashDomain) -> DomainKey {
         DomainKey(blake3::derive_key(domain.context(), &self.0))
