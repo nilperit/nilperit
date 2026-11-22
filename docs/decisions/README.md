@@ -33,3 +33,4 @@ ADRs are written in plain English (not STE), because rationale and trade-offs re
 | [0016](0016-compression.md)                   | Compression recorded per object                             | Accepted |
 | [0017](0017-pack-layout.md)                   | Pack layout                                                 | Accepted |
 | [0018](0018-keys-seal-and-vault-config.md)    | Keys, the seal and the vault config                         | Accepted |
+| [0019](0019-item-record-journal-and-snapshot-fields.md) | The fields of the item record, delta entry and snapshot header | Accepted |

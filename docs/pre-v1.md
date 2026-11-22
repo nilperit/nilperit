@@ -29,6 +29,9 @@ Remove an item when it is done. The history is in git.
 - **A real seal in the test vector.** The pack vector A.8 has a placeholder seal and KEM name. Replace them when the seal code exists and there is an X-Wing implementation to check against. Add the seal itself as a vector.
 - **Chunking.** The profile values in section 5.2.4 are draft values. Still open: the exact text of `fastcdc-2020` and how the chunker seed makes the gear table (section 5.2.4.2).
 - **Still open in `format.md` section 13:** the fields of a checkpoint, the type IDs and field numbers of the remaining object types, the schema dictionary generator, and the parity data format.
+- **Object types still to specify:** the checkpoint, the tree nodes, the condemnation record, and the index segment (`format.md` section 13). The item record, delta entry and snapshot header are specified (ADR 0019).
+- **Statistics in the snapshot header.** Only the item count and the total size for now (ADR 0019). Data that changes over time, such as which replicas hold which objects, does not fit an immutable header. Put it in an index segment or in scrub results.
+- **Time precision.** Times are in milliseconds (ADR 0019). A connector that needs finer file times keeps them in its metadata. Check this when the folder connector exists.
 - **Very large files.** A content object lists every chunk. With the default profile, a 1 TiB file has a content object of about 143 MB. The large profile keeps this small (about 18 MB), and profiles are chosen by the data. If TB-scale files with small chunks turn out to be common, make content objects a tree in a later schema version.
 - **More compression algorithms.** zstd and LZ4 as opt-in algorithms, after we have audited a decoder. A source can already use `none`.
 - **The pack trailer is a single point of failure for its pack.** We accept this (ADR 0017). Revisit it only if experience shows a problem. Replicas and parity cover it.
