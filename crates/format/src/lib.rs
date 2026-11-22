@@ -34,7 +34,7 @@ pub use ids::{
 pub use item_record::ItemRecord;
 pub use lock_file::LockFile;
 pub use object_table::{Compression, KeyClass, ObjectTable, ObjectTableEntry};
-pub use pack::{Footer, Header, PackClass, PackError, Trailer};
+pub use pack::{Footer, Header, MAX_OBJECT_SIZE, PackClass, PackError, Trailer};
 pub use snapshot_header::{SnapshotHeader, Statistics};
 pub use vault_config::{
     ChunkingProfile, VaultConfig, VaultEssentials, join_config_file, split_config_file,

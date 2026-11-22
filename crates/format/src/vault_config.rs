@@ -16,7 +16,7 @@ use crate::fields::{
     write_map, write_text, write_u64,
 };
 use crate::ids::VaultId;
-use crate::pack::{ENCRYPTION_XCHACHA20_POLY1305, FORMAT_VERSION, HASH_BLAKE3};
+use crate::pack::{ENCRYPTION_XCHACHA20_POLY1305, FORMAT_VERSION, HASH_BLAKE3, MAX_OBJECT_SIZE};
 
 /// The largest allowed config file, in bytes (format.md 7.2.1).
 pub const MAX_CONFIG_SIZE: usize = 1 << 20;
@@ -187,6 +187,16 @@ impl VaultConfig {
         if ids.windows(2).any(|w| w[0] == w[1]) {
             return Err(ObjectError::Rule("chunking profile ID occurs twice"));
         }
+        // A chunk is an object, and a reader rejects an object above the limit (6.7.6).
+        if self
+            .chunking_profiles
+            .iter()
+            .any(|p| p.max_size > MAX_OBJECT_SIZE)
+        {
+            return Err(ObjectError::Rule(
+                "a chunking profile has a maximum size above the limit of an object",
+            ));
+        }
         Ok(())
     }
 }
@@ -337,6 +347,45 @@ mod tests {
             1,
             &[raw_profile(5), raw_profile(5)]
         )));
+    }
+
+    #[test]
+    fn a_chunk_cannot_be_larger_than_an_object_may_be() {
+        let with_max = |max_size: u32| ChunkingProfile {
+            max_size,
+            ..profile(1)
+        };
+        let rule = |c: VaultConfig| matches!(c.encode(), Err(ObjectError::Rule(_)));
+        // The limit itself is fine, one byte more is not.
+        let at_limit = VaultConfig {
+            chunking_profiles: vec![with_max(MAX_OBJECT_SIZE)],
+            ..config()
+        };
+        assert!(!rule(at_limit.clone()));
+        assert_eq!(
+            VaultConfig::decode(&at_limit.encode().unwrap()).unwrap(),
+            at_limit
+        );
+        assert!(rule(VaultConfig {
+            chunking_profiles: vec![with_max(MAX_OBJECT_SIZE + 1)],
+            ..config()
+        }));
+        assert!(rule(VaultConfig {
+            chunking_profiles: vec![with_max(u32::MAX)],
+            ..config()
+        }));
+        // A config that someone else wrote is rejected in the same way.
+        let raw = write_array(&[
+            write_u64(1),
+            write_text("fixed"),
+            write_u64(0),
+            write_u64(0),
+            write_u64(u64::from(MAX_OBJECT_SIZE) + 1),
+        ]);
+        assert!(matches!(
+            VaultConfig::decode(&raw_map(&essentials(), 1, &[raw])),
+            Err(ObjectError::Rule(_))
+        ));
     }
 
     #[test]
