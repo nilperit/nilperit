@@ -13,8 +13,9 @@ use nilperit_crypto::{
 };
 use nilperit_format::pack::{ENCRYPTION_XCHACHA20_POLY1305, FOOTER_SIZE, HASH_BLAKE3};
 use nilperit_format::{
-    ChunkingProfile, Compression, Footer, Header, KeyClass, ObjectId, ObjectTable,
-    ObjectTableEntry, PackClass, Trailer, VaultConfig, VaultEssentials, VaultId, join_config_file,
+    ChunkingProfile, Compression, DeltaEntry, Footer, Header, KeyClass, ObjectId, ObjectTable,
+    ObjectTableEntry, PackClass, PackName, SnapshotHeader, SnapshotId, SourceId, Trailer,
+    VaultConfig, VaultEssentials, VaultId, join_config_file,
 };
 use x_wing::kem::common::rand_core::{TryCryptoRng, TryRng};
 
@@ -237,4 +238,85 @@ pub fn file_with_key(config: &VaultConfig, seed: &RootSeed) -> Vec<u8> {
     let map = config.encode().unwrap();
     let mac = config_mac(&seed.writer_key().config_mac_key(), &map);
     join_config_file(&map, &mac).unwrap()
+}
+
+/// The root seed of the test vaults.
+pub fn test_seed() -> RootSeed {
+    RootSeed::from_bytes([7; 32])
+}
+
+/// The name of a pack: the hash of its bytes.
+pub fn pack_name(bytes: &[u8]) -> PackName {
+    PackName::from_bytes(*blake3::hash(bytes).as_bytes())
+}
+
+/// Opens a vault in memory, with the given packs and extra files. The vault
+/// config is valid for `test_seed()` and its vault ID is 1.
+pub fn vault_with(
+    packs: &[&[u8]],
+    files: &[(alloc::string::String, Vec<u8>)],
+) -> crate::Vault<crate::MemoryTarget> {
+    let seed = test_seed();
+    let mut target = crate::MemoryTarget::new();
+    target.insert(
+        crate::layout::CONFIG_A,
+        file_with_key(&config(&seed, 1, 1), &seed),
+    );
+    for bytes in packs {
+        target.insert(&crate::layout::pack_path(&pack_name(bytes)), bytes.to_vec());
+    }
+    for (path, bytes) in files {
+        target.insert(path, bytes.clone());
+    }
+    block_on(crate::Vault::open(target, &seed)).unwrap()
+}
+
+/// A snapshot header of vault 1.
+pub fn header(
+    source: u8,
+    snapshot: u8,
+    time: i64,
+    entry: ObjectId,
+    sequence: u64,
+) -> SnapshotHeader {
+    SnapshotHeader {
+        source_id: SourceId::from_bytes([source; 16]),
+        snapshot_id: SnapshotId::from_bytes([snapshot; 16]),
+        time,
+        item_map_root: None,
+        parent_snapshot: None,
+        journal_entry: entry,
+        journal_sequence: sequence,
+        statistics: None,
+        vault: config(&test_seed(), 1, 1).essentials,
+    }
+}
+
+/// The file of a snapshot header: nonce, ciphertext, tag (format.md 3.3.7.1).
+pub fn snapshot_file(header: &SnapshotHeader) -> Vec<u8> {
+    let key = test_seed().writer_key().snapshot_header_key();
+    encrypt(&key, &[], &header.encode().unwrap(), &mut TestRng(5)).unwrap()
+}
+
+/// The path and the bytes of a snapshot header file, ready for `vault_with`.
+pub fn snapshot_entry(header: &SnapshotHeader) -> (alloc::string::String, Vec<u8>) {
+    (
+        crate::layout::snapshot_path(&header.snapshot_id),
+        snapshot_file(header),
+    )
+}
+
+/// A delta entry as a pack object (type 5, W, not compressed), and its object ID.
+pub fn entry_object(entry: &DeltaEntry) -> (TestObject, ObjectId) {
+    let stored = entry.encode().unwrap();
+    let id = ObjectId::from_bytes(
+        TestKeys::from_seed(&test_seed())
+            .dedup
+            .domain_keys()
+            .object_id(5, &stored),
+    );
+    (
+        TestObject::new(5, KeyClass::W, Compression::None, &stored),
+        id,
+    )
 }

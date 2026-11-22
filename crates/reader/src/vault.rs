@@ -92,6 +92,10 @@ impl<T: Target> Vault<T> {
         pack.read_object(&self.target, id, &self.keys).await
     }
 
+    pub(crate) fn keys(&self) -> &Keys {
+        &self.keys
+    }
+
     pub(crate) fn target(&self) -> &T {
         &self.target
     }

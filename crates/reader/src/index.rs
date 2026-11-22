@@ -109,30 +109,19 @@ mod tests {
     use super::*;
     use crate::layout::{CONFIG_A, pack_path};
     use crate::memory_target::MemoryTarget;
-    use crate::test_util::{TestKeys, TestObject, block_on, build_pack, config, file_with_key};
+    use crate::test_util::{
+        TestKeys, TestObject, block_on, build_pack, config, file_with_key, pack_name, test_seed,
+        vault_with,
+    };
     use alloc::vec;
-    use nilperit_crypto::RootSeed;
     use nilperit_format::{Compression, KeyClass};
 
-    fn seed() -> RootSeed {
-        RootSeed::from_bytes([7; 32])
-    }
-
-    fn pack_name(bytes: &[u8]) -> PackName {
-        PackName::from_bytes(*blake3::hash(bytes).as_bytes())
-    }
-
     fn vault(packs: &[&[u8]]) -> Vault<MemoryTarget> {
-        let mut target = MemoryTarget::new();
-        target.insert(CONFIG_A, file_with_key(&config(&seed(), 1, 1), &seed()));
-        for bytes in packs {
-            target.insert(&pack_path(&pack_name(bytes)), bytes.to_vec());
-        }
-        block_on(Vault::open(target, &seed())).unwrap()
+        vault_with(packs, &[])
     }
 
     fn pack(objects: &[TestObject]) -> (Vec<u8>, Vec<ObjectId>) {
-        build_pack(&TestKeys::from_seed(&seed()), objects)
+        build_pack(&TestKeys::from_seed(&test_seed()), objects)
     }
 
     fn chunk(text: &[u8]) -> TestObject {
@@ -188,11 +177,14 @@ mod tests {
     fn ignores_files_that_are_not_packs() {
         let (a, _) = pack(&[chunk(b"one")]);
         let mut target = MemoryTarget::new();
-        target.insert(CONFIG_A, file_with_key(&config(&seed(), 1, 1), &seed()));
+        target.insert(
+            CONFIG_A,
+            file_with_key(&config(&test_seed(), 1, 1), &test_seed()),
+        );
         target.insert(&pack_path(&pack_name(&a)), a.clone());
         target.insert("packs/ab/temporary", vec![1, 2, 3]);
         target.insert("packs/notes.txt", vec![1, 2, 3]);
-        let vault = block_on(Vault::open(target, &seed())).unwrap();
+        let vault = block_on(Vault::open(target, &test_seed())).unwrap();
         let index = block_on(vault.scan_packs()).unwrap();
         assert_eq!(index.packs().count(), 1);
         assert!(index.skipped().is_empty());
